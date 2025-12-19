@@ -17,6 +17,27 @@ Das System besteht aus vier Hauptkomponenten:
 
 ---
 
+## Inhaltsverzeichnis
+
+- [Überblick](#überblick)
+- [Systemarchitektur](#systemarchitektur)
+- [Voraussetzungen](#voraussetzungen)
+- [Installation](#installation)
+- [Verwendung](#verwendung)
+- [Projektstruktur](#projektstruktur)
+- [Funktionsweise](#funktionsweise)
+- [Unterstützte Anfragen](#unterstützte-anfragen)
+- [Erweiterungen](#erweiterungen)
+- [Konfiguration](#konfiguration)
+- [Sicherheit](#sicherheit)
+- [Fehlerbehandlung](#fehlerbehandlung)
+- [Lizenz](#lizenz)
+- [Autoren](#autoren)
+- [Kontakt](#kontakt)
+
+
+---
+
 ## Systemarchitektur
 
 ```
@@ -57,7 +78,7 @@ User Input (natürliche Sprache)
 
 - Python 3.10 oder höher
 - OpenAI API Key (GPT-4 Zugriff)
-- Zugriff auf die THWS Logistics OData API
+- Zugriff auf die OData API
   - OAuth Client ID
   - OAuth Client Secret
   - API Base URL
@@ -70,7 +91,7 @@ User Input (natürliche Sprache)
 
 ```bash
 git clone <repository-url>
-cd logistics-chatbot
+cd odata_LLM_Chatbot
 ```
 
 ### 2. Dependencies installieren
