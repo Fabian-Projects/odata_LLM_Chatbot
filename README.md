@@ -346,7 +346,10 @@ Projektarbeit THWS - Business Analytics 2
 
 ## Autoren
 
-Entwickelt von Studierenden der THWS im Rahmen der Logistics Systems Vorlesung.
+Maike Knauer, Johanna Kießling, Dalilah Baumann, Fabian Niebelschütz
+
+*Studierende des Studiengangs Business Analyitics der Technischen Hochschule Würzburg-Schweinfurt.*
+
 
 ---
 
