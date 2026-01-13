@@ -68,7 +68,7 @@ def run_complete_pipeline(user_query: str):
 
 
 def interactive_mode():
-    """Interaktiver Chat-Modus mit natürlichen Antworten"""
+    """Interaktiver Chat-Modus mit Error Handling"""
     
     print_section("Logistics Chatbot - Interaktiver Modus")
     
@@ -99,13 +99,22 @@ def interactive_mode():
             
             print()
             
-            # Pipeline ausführen
+            # 1. Parse mit Error Check
             parsed = parser.parse_query(user_input)
+            
+            # 2. Prüfe ob beantwortbar
+            if not parsed.get("isAnswerable", True):
+                reason = parsed.get("reason", "Diese Frage kann ich nicht beantworten.")
+                print(f"\nBot: {reason}")
+                print("Ich kann dir nur Informationen über Fahraufträge geben.\n")
+                print("-" * 60)
+                continue
+            
+            # 3. Normale Pipeline
             odata_result = client.execute_query(parsed)
             calc_result = engine.process(odata_result, parsed.get('calculation'))
             response = generator.generate(calc_result, parsed.get('response_context'))
             
-            # Antwort ausgeben
             print(f"\nBot: {response}\n")
             print("-" * 60)
             
@@ -113,7 +122,9 @@ def interactive_mode():
             print("\n\nAbgebrochen!")
             break
         except Exception as e:
-            print(f"\nFehler: {e}\n")
+            print(f"\nBot: Entschuldigung, da ist etwas schiefgelaufen.")
+            print(f"Fehler: {e}\n")
+            print("-" * 60)
 
 
 def demo_mode():

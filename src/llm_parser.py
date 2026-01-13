@@ -76,7 +76,7 @@ class LLMQueryParser:
             return validated_output
             
         except Exception as e:
-            print(f"❌ LLM Parser Error: {e}")
+            print(f"LLM Parser Error: {e}")
             return self._get_fallback_response(user_input, str(e))
     
     def _build_system_prompt(self) -> str:
@@ -85,11 +85,18 @@ class LLMQueryParser:
         """
         
         heute = datetime.now().strftime("%Y-%m-%d")
-        
+        date_context = self._get_date_context()
+
         prompt = f"""Du bist ein Experten-System für Logistik-Datenbanken. 
 Deine Aufgabe: Wandle natürliche Sprach-Anfragen in strukturierte JSON-Queries für ein OData-API um.
 
 **Heutiges Datum:** {heute}
+{date_context}
+
+**WICHTIG - Beantwortbarkeit:**
+- Prüfe ob die Frage mit den verfügbaren Datenbank-Feldern beantwortbar ist
+- Wenn NICHT (z.B. Wetter, externe Daten), setze "isAnswerable": false
+- Gib dann einen freundlichen Grund an
 
 **Datenbank-Schema (Fahraufträge):**
 - ID (string): Eindeutige ID
@@ -111,6 +118,8 @@ Deine Aufgabe: Wandle natürliche Sprach-Anfragen in strukturierte JSON-Queries 
 **Output-Format (IMMER als gültiges JSON):**
 
 {{
+  "isAnswerable": true oder false,
+  "reason": "Erklärung wenn nicht beantwortbar (nur bei false)",
   "intent": "query" oder "calculation",
   "odata_params": {{
     "$filter": "OData-Filter-String (optional)",
@@ -216,26 +225,31 @@ User: "Welche Aufträge sind von HR-01-08 nach HR-02-02 gefahren?"
         return prompt
     
     def _validate_and_enhance(self, parsed: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Validiert und ergänzt das geparste JSON
-        """
+        """Validiert und ergänzt das geparste JSON"""
         
-        # Defaults setzen
+        # isAnswerable Check
+        if "isAnswerable" not in parsed:
+            parsed["isAnswerable"] = True
+        
+        # Wenn nicht beantwortbar, gib das direkt zurück
+        if not parsed["isAnswerable"]:
+            if "reason" not in parsed:
+                parsed["reason"] = "Die Frage kann mit den verfügbaren Daten nicht beantwortet werden."
+            return parsed
+        
+        # Rest wie vorher...
         if "intent" not in parsed:
             parsed["intent"] = "query"
         
         if "odata_params" not in parsed:
             parsed["odata_params"] = {}
         
-        # Top-Limit sicherstellen
         if "$top" not in parsed["odata_params"]:
             parsed["odata_params"]["$top"] = 100
         
-        # Calculation null-Check
         if "calculation" not in parsed or parsed["calculation"] == {}:
             parsed["calculation"] = None
         
-        # Response Context sicherstellen
         if "response_context" not in parsed:
             parsed["response_context"] = {
                 "user_question": "Unbekannte Anfrage",
@@ -268,6 +282,20 @@ User: "Welche Aufträge sind von HR-01-08 nach HR-02-02 gefahren?"
         if self.conversation_history:
             return self.conversation_history[-1]
         return None
+    def _get_date_context(self):
+        """Generiert Kontext für relative Datumsangaben"""
+        today = datetime.now()
+        yesterday = today - timedelta(days=1)
+        week_ago = today - timedelta(days=7)
+    
+        return f"""
+    Aktuelles Datum: {today.strftime('%Y-%m-%d')}
+    Gestern: {yesterday.strftime('%Y-%m-%d')}
+    Vor einer Woche: {week_ago.strftime('%Y-%m-%d')}
+
+    Konvertiere relative Datumsangaben (heute, gestern, letzte Woche) in ISO-Format (YYYY-MM-DD).
+    Akzeptiere Formate wie DD.MM.YYYY, DD/MM/YYYY und konvertiere sie zu YYYY-MM-DD.
+    """
 
 
 # ===== HELPER FUNCTIONS =====

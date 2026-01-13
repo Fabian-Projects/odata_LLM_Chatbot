@@ -32,8 +32,18 @@ def init_pipeline():
     generator = ResponseGenerator(language="de")
 
 def bot_reply(user_message: str) -> str:
+    """Pipeline mit Error Handling"""
     init_pipeline()
+    
+    # 1. Parse
     parsed = parser.parse_query(user_message)
+    
+    # 2. Check ob beantwortbar
+    if not parsed.get("isAnswerable", True):
+        reason = parsed.get("reason", "Diese Frage kann ich nicht beantworten.")
+        return f"{reason}\n\nIch kann dir nur Informationen über Fahraufträge geben (Anzahl, Status, Ressourcen, etc.)."
+    
+    # 3. Normale Pipeline
     odata_result = client.execute_query(parsed)
     calc_result = engine.process(odata_result, parsed.get("calculation"))
     return generator.generate(calc_result, parsed.get("response_context"))
