@@ -67,21 +67,20 @@ def run_complete_pipeline(user_query: str):
     print("-" * 60)
 
 
+# In demo_chatbot.py - ändere interactive_mode():
+
 def interactive_mode():
-    """Interaktiver Chat-Modus mit Error Handling"""
+    """Interaktiver Chat-Modus mit Kontext"""
     
     print_section("Logistics Chatbot - Interaktiver Modus")
     
-    # Komponenten initialisieren
     parser = LLMQueryParser(Config.OPENAI_API_KEY, Config.OPENAI_MODEL)
-    client = ODataClient(
-        Config.ODATA_BASE_URL,
-        Config.OAUTH_TOKEN_URL,
-        Config.OAUTH_CLIENT_ID,
-        Config.OAUTH_CLIENT_SECRET
-    )
+    client = ODataClient(...)
     engine = CalculationEngine()
     generator = ResponseGenerator(language="de")
+    
+    # NEU: Kontext für letzte Anfrage
+    last_context = None
     
     print("Stelle Fragen zu den Fahrauftraegen")
     print("('exit' zum Beenden)\n")
@@ -99,10 +98,22 @@ def interactive_mode():
             
             print()
             
-            # 1. Parse mit Error Check
-            parsed = parser.parse_query(user_input)
+            #Kontext-Info mitgeben
+            if last_context:
+                enriched_input = f"{user_input}\n\nKontext der letzten Anfrage:\n{last_context}"
+            else:
+                enriched_input = user_input
             
-            # 2. Prüfe ob beantwortbar
+            # Parse mit Kontext
+            parsed = parser.parse_query(enriched_input)
+            
+            # Error Checks...
+            if parsed.get("intent") == "error":
+                error_msg = parsed.get("response_context", {}).get("friendly_description", "Parsing-Fehler")
+                print(f"\nBot: {error_msg}\n")
+                print("-" * 60)
+                continue
+            
             if not parsed.get("isAnswerable", True):
                 reason = parsed.get("reason", "Diese Frage kann ich nicht beantworten.")
                 print(f"\nBot: {reason}")
@@ -110,10 +121,13 @@ def interactive_mode():
                 print("-" * 60)
                 continue
             
-            # 3. Normale Pipeline
+            # Pipeline
             odata_result = client.execute_query(parsed)
             calc_result = engine.process(odata_result, parsed.get('calculation'))
             response = generator.generate(calc_result, parsed.get('response_context'))
+            
+            #Kontext speichern
+            last_context = f"Frage: {user_input}\nFilter: {parsed.get('odata_params', {}).get('$filter', 'keine')}\nErgebnis: {calc_result.get('summary', 'N/A')}"
             
             print(f"\nBot: {response}\n")
             print("-" * 60)

@@ -31,22 +31,46 @@ def init_pipeline():
     engine = CalculationEngine()
     generator = ResponseGenerator(language="de")
 
-def bot_reply(user_message: str) -> str:
-    """Pipeline mit Error Handling"""
+# Globale Variable für Session-Context (einfache Variante)
+conversation_contexts = {}
+
+def bot_reply(user_message: str, session_id: str = "default") -> str:
+    """Pipeline mit Kontext-Memory"""
     init_pipeline()
     
-    # 1. Parse
-    parsed = parser.parse_query(user_message)
+    # Kontext laden
+    last_context = conversation_contexts.get(session_id)
     
-    # 2. Check ob beantwortbar
+    # Input mit Kontext anreichern
+    if last_context:
+        enriched_input = f"{user_message}\n\nKontext der letzten Anfrage:\n{last_context}"
+    else:
+        enriched_input = user_message
+    
+    # Parse
+    parsed = parser.parse_query(enriched_input)
+    
+    # Checks
+    if parsed.get("intent") == "error":
+        return parsed.get("response_context", {}).get("friendly_description", "Parsing-Fehler")
+    
     if not parsed.get("isAnswerable", True):
         reason = parsed.get("reason", "Diese Frage kann ich nicht beantworten.")
-        return f"{reason}\n\nIch kann dir nur Informationen über Fahraufträge geben (Anzahl, Status, Ressourcen, etc.)."
+        return f"{reason}\n\nIch kann dir nur Informationen über Fahraufträge geben."
     
-    # 3. Normale Pipeline
+    # Pipeline
     odata_result = client.execute_query(parsed)
     calc_result = engine.process(odata_result, parsed.get("calculation"))
-    return generator.generate(calc_result, parsed.get("response_context"))
+    response = generator.generate(calc_result, parsed.get("response_context"))
+    
+    # Kontext speichern
+    conversation_contexts[session_id] = (
+        f"Frage: {user_message}\n"
+        f"Filter: {parsed.get('odata_params', {}).get('$filter', 'keine')}\n"
+        f"Ergebnis: {calc_result.get('summary', 'N/A')}"
+    )
+    
+    return response
 
 
 
