@@ -1,6 +1,7 @@
 """
 LLM-basierter Query Parser
 Konvertiert natürliche Sprache in strukturierte OData-Queries + Berechnungslogik
+KORRIGIERT: createdAt Format, Millisekunden, letzte Woche Support
 """
 
 import json
@@ -85,13 +86,29 @@ class LLMQueryParser:
         """
         
         heute = datetime.now().strftime("%Y-%m-%d")
+        aktuelle_uhrzeit = datetime.now().strftime("%H:%M")
         date_context = self._get_date_context()
 
         prompt = f"""Du bist ein Experten-System für Logistik-Datenbanken. 
 Deine Aufgabe: Wandle natürliche Sprach-Anfragen in strukturierte JSON-Queries für ein OData-API um.
 
+**KRITISCH - Datumsformat:**
+API nutzt: "2026-01-19T08:43:23.787Z" (MIT Millisekunden .000Z)
+Filter MÜSSEN Millisekunden haben: "createdAt ge 2026-01-19T00:00:00.000Z"
+
 **Heutiges Datum:** {heute}
+**Aktuelle Uhrzeit:** {aktuelle_uhrzeit}
 {date_context}
+
+**WICHTIG - SCHICHTEN:**
+Es gibt zwei Schichten:
+- Frühschicht: 06:00 - 14:00 Uhr
+- Spätschicht: 14:00 - 22:00 Uhr
+
+Erkenne Schicht-Anfragen:
+- "in der Frühschicht" → shift_filter: "früh"
+- "in der Spätschicht" → shift_filter: "spät"
+- "heute noch" / "aktuelle Schicht" → shift_filter: "current"
 
 **WICHTIG - Beantwortbarkeit:**
 - Prüfe ob die Frage mit den verfügbaren Datenbank-Feldern beantwortbar ist
@@ -100,13 +117,13 @@ Deine Aufgabe: Wandle natürliche Sprach-Anfragen in strukturierte JSON-Queries 
 
 **Datenbank-Schema (Fahraufträge):**
 - ID (string): Eindeutige ID
-- createdAt (datetime): Erstellungszeitpunkt
+- createdAt (datetime): Erstellungszeitpunkt - Format "2026-01-19T08:43:23.787Z"
 - modifiedAt (datetime): Letzte Änderung
 - due (datetime): Fälligkeitsdatum
-- state (string): Status (READY, IN_PROGRESS, COMPLETED, etc.)
-- type_ID (string): Auftragstyp (z.B. UMLAGERUNG)
-- group (string): Zugewiesene Gruppe
-- assignedResource_ID (string): Zugewiesene Ressource (kann null sein)
+- state (string): Status (READY, RUNNING, COMPLETED, etc.)
+- type_ID (string): Auftragstyp (z.B. WARENEINGANG, UMLAGERUNG)
+- group (string): Zugewiesene Gruppe (KANN NULL SEIN!)
+- assignedResource_ID (string): Zugewiesene Ressource
 - source (string): Startort
 - destination (string): Zielort
 - material (string): Material-Bezeichnung
@@ -129,10 +146,11 @@ Deine Aufgabe: Wandle natürliche Sprach-Anfragen in strukturierte JSON-Queries 
     "$count": true/false (optional)
   }},
   "calculation": {{
-    "type": "count" | "average_time" | "utilization" | "sum" | null,
+    "type": "count" | "sum" | null,
     "grouping_field": "Feldname für Gruppierung (optional)",
-    "time_field": "createdAt" | "modifiedAt" | "due" (optional),
-    "aggregation": "sum" | "avg" | "min" | "max" (optional)
+    "shift_filter": "früh" | "spät" | "current" | null,
+    "detail_level": "basic" | "detailed",
+    "time_field": "createdAt" | "modifiedAt" | "due" (optional)
   }},
   "response_context": {{
     "user_question": "Original-Frage",
@@ -143,23 +161,29 @@ Deine Aufgabe: Wandle natürliche Sprach-Anfragen in strukturierte JSON-Queries 
 **OData Filter Syntax:**
 - Vergleiche: eq (gleich), ne (ungleich), gt (größer), ge (größer-gleich), lt (kleiner), le (kleiner-gleich)
 - Logik: and, or, not
-- Datum: ISO-Format "2025-12-17T00:00:00Z"
+- Datum: ISO-Format MIT Millisekunden: "2026-01-19T00:00:00.000Z"
 - String: 'Wert' (in Anführungszeichen)
-- Zeiträume: "createdAt ge 2025-12-17T00:00:00Z and createdAt lt 2025-12-18T00:00:00Z"
+- Zeiträume: "createdAt ge 2026-01-19T00:00:00.000Z and createdAt le 2026-01-19T23:59:59.999Z"
+
+**WICHTIG für Zeiträume:**
+- Nutze "ge" (>=) für Start
+- Nutze "le" (<=) für Ende
+- Immer .000Z oder .999Z für Millisekunden
 
 **Beispiele:**
 
 User: "Wie viele Aufträge gab es heute?"
 {{
+  "isAnswerable": true,
   "intent": "calculation",
   "odata_params": {{
-    "$filter": "createdAt ge {heute}T00:00:00Z and createdAt lt {heute}T23:59:59Z",
-    "$select": "ID"
+    "$filter": "createdAt ge {heute}T00:00:00.000Z and createdAt le {heute}T23:59:59.999Z",
+    "$select": "ID,createdAt,state,type_ID"
   }},
   "calculation": {{
     "type": "count",
     "grouping_field": null,
-    "time_field": "createdAt"
+    "detail_level": "basic"
   }},
   "response_context": {{
     "user_question": "Wie viele Aufträge gab es heute?",
@@ -167,59 +191,124 @@ User: "Wie viele Aufträge gab es heute?"
   }}
 }}
 
-User: "Zeige mir ID 3"
+User: "Zeige mir Auftrag 89"
 {{
+  "isAnswerable": true,
   "intent": "query",
   "odata_params": {{
-    "$filter": "ID eq '3'",
-    "$select": "ID,material,quantityAmount,quantityUnit,source,destination,createdAt,state"
+    "$filter": "ID eq '89'",
+    "$select": "ID,createdAt,state,type_ID,source,destination,material,quantityAmount"
   }},
   "calculation": null,
   "response_context": {{
-    "user_question": "Zeige mir ID 3",
-    "friendly_description": "Details zum Fahrauftrag mit ID 3"
+    "user_question": "Zeige mir Auftrag 89",
+    "friendly_description": "Details zu Auftrag 89"
   }}
 }}
 
-User: "Wie viele Aufträge pro Gruppe heute?"
+User: "Wie viele Aufträge nach Status heute?"
 {{
+  "isAnswerable": true,
   "intent": "calculation",
   "odata_params": {{
-    "$filter": "createdAt ge {heute}T00:00:00Z and createdAt lt {heute}T23:59:59Z",
-    "$select": "ID,group"
+    "$filter": "createdAt ge {heute}T00:00:00.000Z and createdAt le {heute}T23:59:59.999Z",
+    "$select": "ID,state,createdAt"
   }},
   "calculation": {{
     "type": "count",
-    "grouping_field": "group",
-    "time_field": "createdAt"
+    "grouping_field": "state",
+    "detail_level": "basic"
   }},
   "response_context": {{
-    "user_question": "Wie viele Aufträge pro Gruppe heute?",
-    "friendly_description": "Anzahl Aufträge gruppiert nach Gruppe für heute"
+    "user_question": "Wie viele Aufträge nach Status heute?",
+    "friendly_description": "Aufträge gruppiert nach Status"
   }}
 }}
 
-User: "Welche Aufträge sind von HR-01-08 nach HR-02-02 gefahren?"
+User: "Kannst du mir genauere Informationen geben?"
 {{
-  "intent": "query",
+  "isAnswerable": true,
+  "intent": "calculation",
   "odata_params": {{
-    "$filter": "source eq 'HR-01-08' and destination eq 'HR-02-02'",
-    "$select": "ID,source,destination,material,quantityAmount,state,createdAt",
-    "$orderby": "createdAt desc"
+    "$filter": "createdAt ge {heute}T00:00:00.000Z and createdAt le {heute}T23:59:59.999Z",
+    "$select": "ID,state,type_ID,createdAt,assignedResource_ID"
   }},
-  "calculation": null,
+  "calculation": {{
+    "type": "count",
+    "grouping_field": "state",
+    "detail_level": "detailed"
+  }},
   "response_context": {{
-    "user_question": "Welche Aufträge sind von HR-01-08 nach HR-02-02 gefahren?",
-    "friendly_description": "Fahraufträge von HR-01-08 nach HR-02-02"
+    "user_question": "Kannst du mir genauere Informationen geben?",
+    "friendly_description": "Detaillierte Auftrags-Statistiken"
+  }}
+}}
+
+User: "Wie viele Aufträge gab es letzte Woche?"
+{{
+  "isAnswerable": true,
+  "intent": "calculation",
+  "odata_params": {{
+    "$filter": "createdAt ge LETZTE_WOCHE_START and createdAt le LETZTE_WOCHE_ENDE",
+    "$select": "ID,createdAt,state"
+  }},
+  "calculation": {{
+    "type": "count",
+    "grouping_field": null,
+    "shift_filter": null,
+    "detail_level": "basic"
+  }},
+  "response_context": {{
+    "user_question": "Wie viele Aufträge gab es letzte Woche?",
+    "friendly_description": "Aufträge der letzten Woche"
+  }}
+}}
+
+User: "Wie viele Aufträge gab es heute in der Frühschicht?"
+{{
+  "isAnswerable": true,
+  "intent": "calculation",
+  "odata_params": {{
+    "$filter": "createdAt ge {heute}T00:00:00.000Z and createdAt le {heute}T23:59:59.999Z",
+    "$select": "ID,createdAt,state"
+  }},
+  "calculation": {{
+    "type": "count",
+    "shift_filter": "früh",
+    "detail_level": "basic"
+  }},
+  "response_context": {{
+    "user_question": "Wie viele Aufträge gab es heute in der Frühschicht?",
+    "friendly_description": "Aufträge der Frühschicht"
+  }}
+}}
+
+User: "Wie viele Aufträge haben wir heute noch?"
+{{
+  "isAnswerable": true,
+  "intent": "calculation",
+  "odata_params": {{
+    "$filter": "createdAt ge {heute}T00:00:00.000Z and state ne 'COMPLETED'",
+    "$select": "ID,createdAt,state"
+  }},
+  "calculation": {{
+    "type": "count",
+    "shift_filter": "current",
+    "detail_level": "basic"
+  }},
+  "response_context": {{
+    "user_question": "Wie viele Aufträge haben wir heute noch?",
+    "friendly_description": "Offene Aufträge der aktuellen Schicht"
   }}
 }}
 
 **WICHTIG:**
 - Antworte NUR mit gültigem JSON, keine Erklärungen drumherum
-- Bei Datumsangaben: "heute" = {heute}, "gestern" = Tag davor, etc.
-- Bei unklaren Anfragen: Gib beste Vermutung zurück, setze intent auf "query"
-- $select: Nur relevante Felder, nicht alles
-- $filter: Nutze korrekte OData-Syntax
+- Bei Datumsangaben: "heute" = {heute}, "gestern" = Tag davor, "letzte Woche" = 7 Tage zurück
+- IMMER Millisekunden im Datumsformat: .000Z oder .999Z
+- $select: IMMER "ID,createdAt,state" inkludieren
+- Nutze "state" für Gruppierungen (nicht "group", da oft null)
+- Bei Nachfragen wie "genauere Informationen": setze detail_level auf "detailed"
 """
         
         return prompt
@@ -244,11 +333,30 @@ User: "Welche Aufträge sind von HR-01-08 nach HR-02-02 gefahren?"
         if "odata_params" not in parsed:
             parsed["odata_params"] = {}
         
+        # FIX Datumsfilter mit korrektem Format
+        if "$filter" in parsed["odata_params"]:
+            parsed["odata_params"]["$filter"] = self._fix_date_format(parsed["odata_params"]["$filter"])
+        
         if "$top" not in parsed["odata_params"]:
             parsed["odata_params"]["$top"] = 100
         
         if "calculation" not in parsed or parsed["calculation"] == {}:
             parsed["calculation"] = None
+        
+        # Stelle sicher dass calculation ein Dict ist
+        if parsed["calculation"] is not None:
+            if "detail_level" not in parsed["calculation"]:
+                parsed["calculation"]["detail_level"] = "basic"
+            
+            # Konvertiere "current" zur aktuellen Schicht
+            if parsed["calculation"].get("shift_filter") == "current":
+                current_hour = datetime.now().hour
+                if 6 <= current_hour < 14:
+                    parsed["calculation"]["shift_filter"] = "früh"
+                elif 14 <= current_hour < 22:
+                    parsed["calculation"]["shift_filter"] = "spät"
+                else:
+                    parsed["calculation"]["shift_filter"] = None
         
         if "response_context" not in parsed:
             parsed["response_context"] = {
@@ -257,6 +365,52 @@ User: "Welche Aufträge sind von HR-01-08 nach HR-02-02 gefahren?"
             }
         
         return parsed
+    
+    def _fix_date_format(self, filter_string: str) -> str:
+        """
+        Stellt sicher dass Datumsfilter Millisekunden haben
+        
+        Args:
+            filter_string: OData Filter String
+            
+        Returns:
+            Korrigierter Filter String
+        """
+        # Ersetze Datums-Platzhalter
+        heute = datetime.now()
+        gestern = heute - timedelta(days=1)
+        
+        # Letzte Woche = Montag vor 7 Tagen bis Sonntag vor 7 Tagen
+        heute_wochentag = heute.weekday()  # 0=Montag, 6=Sonntag
+        letzte_woche_start = heute - timedelta(days=heute_wochentag + 7)
+        letzte_woche_ende = letzte_woche_start + timedelta(days=6, hours=23, minutes=59, seconds=59, milliseconds=999)
+        
+        # Ersetze Platzhalter
+        replacements = {
+            "LETZTE_WOCHE_START": letzte_woche_start.strftime("%Y-%m-%dT00:00:00.000Z"),
+            "LETZTE_WOCHE_ENDE": letzte_woche_ende.strftime("%Y-%m-%dT23:59:59.999Z"),
+        }
+        
+        for placeholder, value in replacements.items():
+            filter_string = filter_string.replace(placeholder, value)
+        
+        # Füge Millisekunden hinzu wenn sie fehlen
+        # Pattern: "2026-01-19T00:00:00Z" → "2026-01-19T00:00:00.000Z"
+        import re
+        
+        # Finde alle Datums-Patterns ohne Millisekunden
+        pattern = r'(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})Z'
+        
+        def add_milliseconds(match):
+            return match.group(1) + '.000Z'
+        
+        filter_string = re.sub(pattern, add_milliseconds, filter_string)
+        
+        # Stelle sicher dass End-Zeiten .999Z haben
+        # Pattern: "23:59:59.000Z" → "23:59:59.999Z"
+        filter_string = filter_string.replace('23:59:59.000Z', '23:59:59.999Z')
+        
+        return filter_string
     
     def _get_fallback_response(self, user_input: str, error: str) -> Dict[str, Any]:
         """
@@ -282,20 +436,29 @@ User: "Welche Aufträge sind von HR-01-08 nach HR-02-02 gefahren?"
         if self.conversation_history:
             return self.conversation_history[-1]
         return None
+    
     def _get_date_context(self):
         """Generiert Kontext für relative Datumsangaben"""
         today = datetime.now()
         yesterday = today - timedelta(days=1)
         week_ago = today - timedelta(days=7)
+        
+        # Letzte Woche berechnen
+        heute_wochentag = today.weekday()
+        letzte_woche_start = today - timedelta(days=heute_wochentag + 7)
+        letzte_woche_ende = letzte_woche_start + timedelta(days=6)
     
         return f"""
-    Aktuelles Datum: {today.strftime('%Y-%m-%d')}
-    Gestern: {yesterday.strftime('%Y-%m-%d')}
-    Vor einer Woche: {week_ago.strftime('%Y-%m-%d')}
+Aktuelles Datum: {today.strftime('%Y-%m-%d')}
+Gestern: {yesterday.strftime('%Y-%m-%d')}
+Vor einer Woche: {week_ago.strftime('%Y-%m-%d')}
+Letzte Woche Start: {letzte_woche_start.strftime('%Y-%m-%d')} (Montag)
+Letzte Woche Ende: {letzte_woche_ende.strftime('%Y-%m-%d')} (Sonntag)
 
-    Konvertiere relative Datumsangaben (heute, gestern, letzte Woche) in ISO-Format (YYYY-MM-DD).
-    Akzeptiere Formate wie DD.MM.YYYY, DD/MM/YYYY und konvertiere sie zu YYYY-MM-DD.
-    """
+Bei "letzte Woche": Nutze Platzhalter LETZTE_WOCHE_START und LETZTE_WOCHE_ENDE
+Bei relativen Datumsangaben (heute, gestern): Konvertiere zu ISO-Format mit Millisekunden
+Format-Beispiel: {today.strftime('%Y-%m-%d')}T00:00:00.000Z
+"""
 
 
 # ===== HELPER FUNCTIONS =====
@@ -314,30 +477,37 @@ def build_time_filter(timeframe: str) -> str:
     
     if timeframe == "heute":
         start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        end = now.replace(hour=23, minute=59, second=59)
+        end = now.replace(hour=23, minute=59, second=59, microsecond=999000)
         
     elif timeframe == "gestern":
         yesterday = now - timedelta(days=1)
-        start = yesterday.replace(hour=0, minute=0, second=0)
-        end = yesterday.replace(hour=23, minute=59, second=59)
+        start = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = yesterday.replace(hour=23, minute=59, second=59, microsecond=999000)
         
     elif timeframe == "diese_woche":
         start = now - timedelta(days=now.weekday())
-        start = start.replace(hour=0, minute=0, second=0)
+        start = start.replace(hour=0, minute=0, second=0, microsecond=0)
         end = now
+        
+    elif timeframe == "letzte_woche":
+        # Letzte Woche = Montag bis Sonntag der Vorwoche
+        heute_wochentag = now.weekday()
+        letzte_woche_start = now - timedelta(days=heute_wochentag + 7)
+        start = letzte_woche_start.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = start + timedelta(days=6, hours=23, minutes=59, seconds=59, microseconds=999000)
         
     elif timeframe == "letzter_monat":
         first_of_month = now.replace(day=1)
         end = first_of_month - timedelta(days=1)
-        start = end.replace(day=1, hour=0, minute=0, second=0)
-        end = end.replace(hour=23, minute=59, second=59)
+        start = end.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        end = end.replace(hour=23, minute=59, second=59, microsecond=999000)
         
     else:
         # Default: heute
-        start = now.replace(hour=0, minute=0, second=0)
+        start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         end = now
     
-    start_str = start.strftime("%Y-%m-%dT%H:%M:%SZ")
-    end_str = end.strftime("%Y-%m-%dT%H:%M:%SZ")
+    start_str = start.strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-4] + "000Z"  # Millisekunden
+    end_str = end.strftime("%Y-%m-%dT%H:%M:%S.%fZ")[:-4] + "999Z"
     
-    return f"createdAt ge {start_str} and createdAt lt {end_str}"
+    return f"createdAt ge {start_str} and createdAt le {end_str}"

@@ -1,6 +1,7 @@
 """
 Response Generator
 Wandelt Berechnungsergebnisse in natürliche Sprache um
+KORRIGIERT für createdAt Feldname
 """
 
 from typing import Dict, Any, List, Optional
@@ -35,6 +36,9 @@ class ResponseGenerator:
             Formatierte Antwort als String
         """
         
+        # Prüfe Detail-Level
+        detail_level = result.get("detail_level", "basic")
+        
         # Keine Berechnung? Zeige Rohdaten
         if not result.get("has_calculation"):
             return self._format_raw_data(result, context)
@@ -44,7 +48,7 @@ class ResponseGenerator:
         calc_type = result.get("calculation_type")
         
         if calc_type == "count":
-            return self._format_count(calc_result, context)
+            return self._format_count(calc_result, result, context, detail_level)
         
         elif calc_type == "count_percentage":
             return self._format_count_percentage(calc_result, context)
@@ -59,7 +63,13 @@ class ResponseGenerator:
             # Fallback
             return self._format_generic(calc_result, context)
     
-    def _format_count(self, calc_result: Dict[str, Any], context: Optional[Dict[str, Any]]) -> str:
+    def _format_count(
+        self, 
+        calc_result: Dict[str, Any],
+        full_result: Dict[str, Any],
+        context: Optional[Dict[str, Any]],
+        detail_level: str
+    ) -> str:
         """Formatiert Count-Ergebnis"""
         
         total = calc_result.get("total", 0)
@@ -68,7 +78,13 @@ class ResponseGenerator:
         
         # Einfaches Count
         if not groups:
-            return f"Insgesamt: {total} Fahrauftrag{'e' if total != 1 else ''}"
+            response = f"Insgesamt: {total} Fahrauftrag{'e' if total != 1 else ''}"
+            
+            # Bei detailed: Füge Kontext hinzu
+            if detail_level == "detailed":
+                response += self._add_detailed_context(full_result)
+            
+            return response
         
         # Gruppiertes Count
         response = f"Insgesamt: {total} Fahrauftrag{'e' if total != 1 else ''}\n"
@@ -82,6 +98,10 @@ class ResponseGenerator:
         if groups:
             top_group = max(groups.items(), key=lambda x: x[1])
             response += f"\nMeiste Auftraege: {top_group[0]} mit {top_group[1]} Auftraegen"
+        
+        # Bei detailed: Füge Kontext hinzu
+        if detail_level == "detailed":
+            response += self._add_detailed_context(full_result)
         
         return response
     
@@ -174,7 +194,7 @@ class ResponseGenerator:
             response = "Auftrag gefunden:\n\n"
             
             # Wichtige Felder zuerst
-            important_fields = ["ID", "state", "group", "source", "destination", 
+            important_fields = ["ID", "state", "type_ID", "source", "destination", 
                               "material", "quantityAmount", "quantityUnit", "createdAt"]
             
             for field in important_fields:
@@ -182,8 +202,8 @@ class ResponseGenerator:
                     label = self._translate_field(field)
                     value = record[field]
                     
-                    # Datum formatieren
-                    if "At" in field and isinstance(value, str):
+                    # Datum formatieren (createdAt!)
+                    if field == "createdAt" and isinstance(value, str):
                         try:
                             dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
                             value = dt.strftime("%d.%m.%Y %H:%M")
@@ -204,13 +224,27 @@ class ResponseGenerator:
             if record.get('state'):
                 response += f" | Status: {record.get('state')}"
             
-            if record.get('group'):
-                response += f" | Gruppe: {record.get('group')}"
+            if record.get('type_ID'):
+                response += f" | Typ: {record.get('type_ID')}"
             
             response += "\n"
         
         if count > 5:
             response += f"\n... und {count - 5} weitere"
+        
+        return response
+    
+    def _add_detailed_context(self, result: Dict[str, Any]) -> str:
+        """Fügt detaillierte Kontext-Informationen hinzu"""
+        
+        response = "\n\n--- Detaillierte Informationen ---\n"
+        
+        # Status-Verteilung
+        status_dist = result.get("status_distribution", {})
+        if status_dist:
+            response += "\nStatus-Uebersicht:\n"
+            for status, count in status_dist.items():
+                response += f"  {status}: {count}\n"
         
         return response
     
@@ -231,6 +265,7 @@ class ResponseGenerator:
         translations = {
             "ID": "ID",
             "state": "Status",
+            "type_ID": "Auftragstyp",
             "group": "Gruppe",
             "assignedResource_ID": "Ressource",
             "source": "Quelle",
@@ -241,7 +276,6 @@ class ResponseGenerator:
             "createdAt": "Erstellt am",
             "modifiedAt": "Geaendert am",
             "due": "Faellig am",
-            "type_ID": "Auftragstyp",
             "loadCarrierType_name": "Ladungstraeger",
             "categoryReasonCode": "Kategorie",
             "origin": "Ursprung",
