@@ -72,7 +72,7 @@ Klar und beschreibend:
 
 ---
 
-## 🏗️ Architektur verstehen
+## Architektur verstehen
 
 ### Komponenten-Übersicht
 

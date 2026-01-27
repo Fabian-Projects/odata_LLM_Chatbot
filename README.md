@@ -6,14 +6,14 @@
 
 ---
 
-## Was ist FlexGuide4?
+## Was macht der Chatbot?
 
-FlexGuide4 wandelt natürliche Fragen in Deutsch in präzise Datenbank-Abfragen um und liefert sofort verständliche Antworten über Logistik-Aufträge.
+Er wandelt natürliche Fragen in Deutsch in präzise Datenbank-Abfragen um und liefert sofort verständliche Antworten über Logistik-Aufträge.
 
 **Beispiel:**
 ```
 User: "Welche Fahraufträge stehen beim Jungheinrich als nächstes an?"
-FlexGuide4: "Verfügbare Aufträge für JUNGHEINRICH (3 Stück):
+Chatbot: "Verfügbare Aufträge für JUNGHEINRICH (3 Stück):
 1. Auftrag ID 60: MAGAZINO-PARK-01 → LEERGUT-02
 2. Auftrag ID 89: HR-01-02 → MONTAGE-A1-01
 3. Auftrag ID 45: STAPLER-PARK → UEBERGABE-03"
