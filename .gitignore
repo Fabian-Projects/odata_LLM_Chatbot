@@ -26,6 +26,15 @@ wheels/
 *.egg
 MANIFEST
 
+# Demo & Test Files (nicht für Production)
+demo_chatbot.py
+demo_odata.py
+demo_parser.py
+demo_pipeline.py
+extract_id.py
+test_best_Order.py
+testtest.ipynb
+
 # Virtual Environment
 venv/
 ENV/

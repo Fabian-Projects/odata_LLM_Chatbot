@@ -1,131 +1,116 @@
-# Contributing Guide
+# Contributing zu FlexGuide4
 
-Richtlinien für die Zusammenarbeit am Logistics Chatbot Projekt.
+Danke für dein Interesse am FlexGuide4 Projekt! Diese Guidelines helfen dir beim erfolgreichen Beitragen.
 
 ---
 
-## Setup für Entwickler
+## Quick Start für Entwickler
 
-### 1. Repository forken und klonen
-
-```bash
-git clone <your-fork-url>
-cd logistics-chatbot
-```
-
-### 2. Branch für Feature erstellen
+### Setup
 
 ```bash
-git checkout -b feature/dein-feature-name
-```
+# 1. Repository klonen
+git clone <repository-url>
+cd Flexus_Code
 
-### 3. Dependencies installieren
+# 2. Branch erstellen
+git checkout -b feature/dein-feature
 
-```bash
+# 3. Dependencies installieren
 pip install -r requirements.txt
-```
 
-### 4. .env Datei konfigurieren
-
-```bash
-cp .env.template .env
-# Füge deine Credentials ein
+# 4. .env konfigurieren
+cp env.template .env
+# Credentials eintragen
 ```
 
 ---
 
-## Code-Stil
+## Code-Standards
 
-### Python
+### Python Style
 
-- PEP 8 Style Guide befolgen
-- Docstrings für alle Funktionen und Klassen
-- Type Hints verwenden wo möglich
-- Aussagekräftige Variablen- und Funktionsnamen
+- **PEP 8** konform
+- **Type Hints** für alle Funktionen
+- **Docstrings** für alle öffentlichen Methoden
+- **Aussagekräftige Namen** (keine Abkürzungen)
 
-Beispiel:
+**Beispiel:**
 
 ```python
-def calculate_sum(data: List[Dict[str, Any]], field: str) -> float:
+def calculate_order_count(
+    data: List[Dict[str, Any]], 
+    grouping_field: Optional[str] = None
+) -> Dict[str, Any]:
     """
-    Berechnet Summe über ein numerisches Feld
+    Zählt Aufträge mit optionaler Gruppierung.
     
     Args:
-        data: Liste mit Datensätzen
-        field: Feldname für Summierung
+        data: Liste mit Auftrags-Dictionaries
+        grouping_field: Feld für Gruppierung (optional)
         
     Returns:
-        Summe als Float
+        Dictionary mit Zählergebnissen
     """
-    values = [float(record.get(field, 0)) for record in data]
-    return sum(values)
+    # Implementation
+    pass
 ```
 
-### Kommentare
+### Commit Messages
 
-- Nur wo nötig - Code sollte selbsterklärend sein
-- Deutsche Kommentare für Projektspezifisches
-- Englisch für allgemeinen Code
-
-### Commits
-
-Klare, beschreibende Commit-Messages:
+Klar und beschreibend:
 
 ```bash
-git commit -m "Add sum calculation for quantity fields"
-git commit -m "Fix OAuth token refresh bug"
-git commit -m "Update README with new examples"
+ "Add shift filter for order queries"
+ "Fix OAuth token refresh timeout"
+ "Update README with new examples"
+
+ "fix bug"
+ "update stuff"
+ "wip"
 ```
 
 ---
 
-## Testing
+## 🏗️ Architektur verstehen
 
-### Manuelle Tests
+### Komponenten-Übersicht
 
-Vor jedem Commit:
-
-```bash
-# LLM Parser testen
-python3 demo_parser.py --interactive
-
-# OData Client testen
-python3 demo_odata.py --interactive
-
-# Komplette Pipeline testen
-python3 demo_chatbot.py
+```
+src/
+├── llm_parser.py          # NL → JSON (GPT-4)
+├── odata_client.py        # API Communication
+├── oauth_handler.py       # Token Management
+├── calculation_engine.py  # Berechnungs-Orchestrierung
+└── response_generator.py  # JSON → NL
 ```
 
-### Test-Anfragen
+### Data Flow
 
-Stelle sicher, dass diese funktionieren:
-
-- "Wie viele Aufträge gibt es heute?"
-- "Wie viele Aufträge pro Status?"
-- "Zeige mir Auftrag mit ID 1"
-- "Gesamtmenge aller Aufträge"
+```
+User Input → LLM Parser → OData Client → Calculation Engine → Response Generator → Output
+```
 
 ---
 
-## Neue Features hinzufügen
+# Neue Features hinzufügen
 
-### Neue Berechnung hinzufügen
+### 1. Neue Berechnung
 
-1. Erstelle neue Datei in `calculations/`:
+**Datei:** `calculations/my_calculation.py`
 
 ```python
-# calculations/my_calculation.py
-
 from .base import BaseCalculation
 from typing import Dict, Any, List
 
 class MyCalculation(BaseCalculation):
-    
-    def calculate(self, data: List[Dict[str, Any]], config: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Deine Berechnung implementieren
-        """
-        # Implementation
+    def calculate(
+        self, 
+        data: List[Dict[str, Any]], 
+        config: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Deine Berechnung."""
+        result = {}  # Implementation
         return {
             "result": result,
             "type": "my_type"
@@ -135,13 +120,7 @@ class MyCalculation(BaseCalculation):
         return config.get("type") == "my_type"
 ```
 
-2. In `calculations/__init__.py` importieren:
-
-```python
-from .my_calculation import MyCalculation
-```
-
-3. In `calculations/registry.py` registrieren:
+**Registrieren in** `calculations/registry.py`:
 
 ```python
 def _register_default_calculations(self):
@@ -149,138 +128,110 @@ def _register_default_calculations(self):
     self.register("my_type", MyCalculation())
 ```
 
-4. Testen:
+### 2. Neue Intent im Parser
 
-```bash
-python3 demo_pipeline.py --interactive
+**In** `src/llm_parser.py` → `_build_system_prompt()`:
+
+```python
+# Beispiel im System Prompt hinzufügen
+User: "Deine neue Frage"
+{{
+  "intent": "dein_intent",
+  "odata_params": {{ ... }},
+  "calculation": {{ ... }}
+}}
+```
+
+**In** `demo_app.py` → `bot_reply()`:
+
+```python
+if parsed.get("intent") == "dein_intent":
+    # Implementation
+    return response
 ```
 
 ---
 
-## Pull Request Process
+## Testing vor Pull Request
 
-### 1. Code fertigstellen
+### Manuelle Tests
 
-- Alle Tests durchlaufen lassen
-- Code formatieren
-- Kommentare überprüfen
+```bash
+# Web-Interface starten
+python demo_app.py
+```
 
-### 2. Commit und Push
+**Test-Fragen durchgehen:**
+1. Welche Fahraufträge stehen als nächstes an?
+2. Wie viele Aufträge heute?
+3. Details zu Auftrag 60
+4. Was sind meine nächsten Aufträge?
+
+### Code-Qualität
+
+```bash
+# Syntax Check
+python -m py_compile src/*.py
+
+# Type Check (optional)
+mypy src/
+```
+
+---
+
+## Pull Request Workflow
+
+### 1. Änderungen committen
 
 ```bash
 git add .
-git commit -m "Aussagekräftige Message"
-git push origin feature/dein-feature-name
+git commit -m "Beschreibende Message"
+git push origin feature/dein-feature
 ```
 
-### 3. Pull Request erstellen
+### 2. Pull Request erstellen
 
-- Beschreibe was geändert wurde
-- Füge Beispiele hinzu wenn relevant
-- Verlinke Issues falls vorhanden
+**Beschreibung sollte enthalten:**
+- Was wurde geändert?
+- Warum wurde es geändert?
+- Wie testen? (Beispiel-Fragen)
 
-### 4. Review abwarten
+**Beispiel:**
 
-- Feedback umsetzen
-- Diskussionen konstruktiv führen
+```markdown
+## Änderungen
+- Neuer Intent "material_summary" hinzugefügt
+- Gruppierung nach Material-Typ
+
+## Testing
+Fragen: 
+- "Wie viele Aufträge pro Material?"
+- "Welche Materialien wurden heute transportiert?"
+```
+
+### 3. Code Review
+
+- Feedback konstruktiv umsetzen
+- Tests aktualisieren falls nötig
+- Dokumentation ergänzen
 
 ---
 
-## Code Review Checklist
+## Review Checklist
 
-Beim Review von Pull Requests prüfen:
+**Vor dem Merge:**
 
-- [ ] Code folgt Style Guidelines
-- [ ] Docstrings vorhanden
-- [ ] Manuelle Tests durchgeführt
-- [ ] Keine Credentials im Code
-- [ ] .env nicht committed
-- [ ] README aktualisiert falls nötig
-- [ ] Keine breaking changes ohne Diskussion
-
----
-
-## Projektstruktur verstehen
-
-### src/ - Hauptkomponenten
-
-- `llm_parser.py` - NL zu JSON
-- `odata_client.py` - API Kommunikation
-- `oauth_handler.py` - Token Management
-- `calculation_engine.py` - Orchestrierung
-- `response_generator.py` - Text-Generierung
-
-### calculations/ - Berechnungslogik
-
-- `base.py` - Abstrakte Basis
-- `count.py` - Zähl-Operationen
-- `sum.py` - Summen & Aggregationen
-- `registry.py` - Verwaltung
-
-### config/ - Konfiguration
-
-- `settings.py` - Environment Variables
-
----
-
-## Debugging
-
-### Verbose Output aktivieren
-
-In den Demo-Scripts ist Output bereits aktiviert.
-
-### Python Debugger
-
-```python
-import pdb; pdb.set_trace()
-```
-
-### Logging aktivieren
-
-```python
-import logging
-logging.basicConfig(level=logging.DEBUG)
-```
-
----
-
-## Häufige Probleme
-
-### "Module not found"
-
-```bash
-# Stelle sicher, dass du im Projektverzeichnis bist
-pwd
-
-# Dependencies neu installieren
-pip install -r requirements.txt
-```
-
-### "Config validation failed"
-
-Prüfe `.env` Datei:
-
-```bash
-cat .env
-```
-
-Alle Werte müssen gesetzt sein.
-
-### "Token refresh failed"
-
-OAuth Credentials prüfen:
-- Client ID korrekt?
-- Client Secret korrekt?
-- Token URL erreichbar?
+- [ ] Code folgt PEP 8
+- [ ] Type Hints vorhanden
+- [ ] Docstrings vollständig
+- [ ] Manuelle Tests bestanden
+- [ ] Keine `.env` oder Secrets committed
+- [ ] README aktualisiert (falls nötig)
+- [ ] Keine Breaking Changes ohne Diskussion
 
 ---
 
 ## Fragen?
 
-- Issue im GitHub Repository erstellen
-- Projektgruppe kontaktieren
-- README und Dokumentation konsultieren
-
----
-
-Danke für deine Mitarbeit!
+- Team kontaktieren
+- README konsultieren

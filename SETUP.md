@@ -1,20 +1,19 @@
-# Setup Guide
+# FlexGuide4 - Setup Guide
 
-Detaillierte Anleitung für die Einrichtung des Logistics Chatbot Systems.
+Schnellanleitung für die Installation und Einrichtung von FlexGuide4.
 
 ---
 
 ## Systemanforderungen
 
-- macOS, Linux oder Windows
-- Python 3.10 oder höher
-- Git
-- Internet-Verbindung
-- Terminal/Command Line Zugang
+- **Python:** 3.10 oder höher
+- **Git:** Für Repository-Verwaltung
+- **Internet:** Stabile Verbindung
+- **Browser:** Für Web-Interface
 
 ---
 
-## Schritt-für-Schritt Installation
+## Installation
 
 ### 1. Python Version prüfen
 
@@ -22,32 +21,24 @@ Detaillierte Anleitung für die Einrichtung des Logistics Chatbot Systems.
 python3 --version
 ```
 
-Sollte ausgeben: `Python 3.10.x` oder höher
-
-Falls Python nicht installiert ist:
-- macOS: `brew install python`
-- Linux: `sudo apt install python3`
-- Windows: Download von python.org
+Erwartete Ausgabe: `Python 3.10.x` oder höher
 
 ### 2. Repository klonen
 
 ```bash
 git clone <repository-url>
-cd logistics-chatbot
+cd Flexus_Code
 ```
 
-### 3. Virtual Environment erstellen (empfohlen)
+### 3. Virtual Environment (empfohlen)
 
 ```bash
-# Virtual Environment erstellen
+# Erstellen
 python3 -m venv venv
 
 # Aktivieren
-# macOS/Linux:
-source venv/bin/activate
-
-# Windows:
-venv\Scripts\activate
+source venv/bin/activate        # macOS/Linux
+venv\Scripts\activate           # Windows
 ```
 
 ### 4. Dependencies installieren
@@ -56,215 +47,130 @@ venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Dies installiert:
-- openai - GPT API
-- requests - HTTP Requests
-- python-dotenv - Environment Variables
-- pandas - Datenverarbeitung
-- flask - Web Framework (für später)
-
-### 5. Environment Variables konfigurieren
+### 5. Environment konfigurieren
 
 ```bash
 # Template kopieren
-cp .env.template .env
+cp env.template .env
 
-# Mit Editor öffnen
+# Bearbeiten
 nano .env
-# oder
-vim .env
-# oder
-code .env
 ```
 
 Erforderliche Werte eintragen:
 
 ```env
 # OpenAI
-OPENAI_API_KEY=sk-proj-xxx...
+OPENAI_API_KEY=sk-proj-your-key-here
 OPENAI_MODEL=gpt-4o
 
 # OAuth
-OAUTH_TOKEN_URL=https://studierende-xxx.authentication.eu20.hana.ondemand.com/oauth/token
-OAUTH_CLIENT_ID=xxx
-OAUTH_CLIENT_SECRET=xxx
+OAUTH_TOKEN_URL=https://your-oauth-endpoint.com/oauth/token
+OAUTH_CLIENT_ID=your-client-id
+OAUTH_CLIENT_SECRET=your-client-secret
 
-# OData
-ODATA_BASE_URL=https://thws-projekt-xxx.cfapps.eu20-001.hana.ondemand.com/api_core/orders/Orders
+# OData API
+ODATA_BASE_URL=https://your-api-endpoint.com/orders/Orders
 ```
 
-### 6. Konfiguration testen
+### 6. Installation testen
 
 ```bash
 python3 -c "from config.settings import Config; Config.validate()"
 ```
 
-Sollte ausgeben: `Konfiguration vollständig`
-
-Falls Fehler: Prüfe .env Datei auf fehlende Werte
+Erwartete Ausgabe: `Konfiguration vollständig`
 
 ---
 
-## API Keys beschaffen
+## FlexGuide4 starten
+
+### Web-Interface
+
+```bash
+python demo_app.py
+```
+
+Browser öffnen: `http://localhost:5000`
+
+---
+
+## API Credentials
 
 ### OpenAI API Key
 
-1. Gehe zu https://platform.openai.com
-2. Registriere einen Account
-3. Navigiere zu API Keys
-4. Erstelle neuen Key
-5. Kopiere Key in .env
+1. Account auf [platform.openai.com](https://platform.openai.com) erstellen
+2. API Key generieren
+3. In `.env` unter `OPENAI_API_KEY` eintragen
 
-Kosten: ca. 0.01-0.05 EUR pro Anfrage (abhängig vom Modell)
+**Kosten:** Ca. 0.01-0.05 EUR pro Anfrage
 
 ### THWS OAuth Credentials
 
 Werden vom Projektbetreuer bereitgestellt:
 - Client ID
-- Client Secret
+- Client Secret  
 - Token URL
 - API Base URL
 
 ---
 
-## Erste Schritte
+## Schnelltest
 
-### Test 1: LLM Parser
+Nach dem Start des Web-Interface diese Fragen testen:
 
-```bash
-python3 demo_parser.py --interactive
-```
+**Als Supervisor:**
+- "Welche Fahraufträge stehen als nächstes an?"
+- "Wie viele Aufträge heute?"
 
-Gib ein: "Wie viele Aufträge gibt es heute?"
-
-Erwartete Ausgabe:
-```json
-{
-  "odata_params": {
-    "$filter": "createdAt ge 2025-12-19T...",
-    ...
-  }
-}
-```
-
-### Test 2: OData Client
-
-```bash
-python3 demo_odata.py
-```
-
-Sollte Verbindung herstellen und Test-Query ausführen.
-
-### Test 3: Kompletter Chatbot
-
-```bash
-python3 demo_chatbot.py
-```
-
-Stelle Fragen in natürlicher Sprache.
+**Als Ressource (z.B. MAGAZINO):**
+- "Was sind meine nächsten Aufträge?"
+- "Zeige mir Auftrag 89"
 
 ---
 
-## Troubleshooting
+## Häufige Probleme
 
-### Problem: "No module named 'openai'"
-
-Lösung:
-```bash
-pip install -r requirements.txt
-```
-
-### Problem: "Config validation failed"
-
-Prüfe ob alle Werte in .env gesetzt sind:
-```bash
-cat .env
-```
-
-### Problem: "Token refresh failed"
-
-Mögliche Ursachen:
-- Client ID falsch
-- Client Secret falsch
-- Token URL nicht erreichbar
-- Keine Internet-Verbindung
-
-Lösung: Credentials vom Betreuer erneut anfordern
-
-### Problem: "HTTP 401 Unauthorized"
-
-Token ist abgelaufen oder ungültig.
-
-Lösung:
-```bash
-# Python-Script neu starten
-# Token wird automatisch erneuert
-```
-
-### Problem: "Connection Timeout"
-
-API nicht erreichbar.
-
-Lösung:
-- Internet-Verbindung prüfen
-- VPN verbunden? (falls erforderlich)
-- Firewall prüfen
+| Problem | Lösung |
+|---------|--------|
+| `No module named 'openai'` | `pip install -r requirements.txt` |
+| `Config validation failed` | `.env` Datei prüfen |
+| `Token refresh failed` | OAuth Credentials vom Betreuer anfordern |
+| Port 5000 belegt | Port in `demo_app.py` ändern |
 
 ---
 
-## Projekt-Struktur verstehen
-
-Nach dem Setup sollte die Struktur so aussehen:
+## Projekt-Struktur
 
 ```
-logistics-chatbot/
-├── venv/                  # Virtual Environment (nicht in Git)
-├── src/                   # Quellcode
-├── calculations/          # Berechnungs-Module
-├── config/                # Konfiguration
-├── demo_*.py              # Demo-Scripts
-├── .env                   # Deine Credentials (nicht in Git)
-├── .env.template          # Template
-├── requirements.txt       # Dependencies
-└── README.md              # Haupt-Dokumentation
+Flexus_Code/
+├── demo_app.py              # Web-Interface (Hauptanwendung)
+├── src/                     # Kern-Komponenten
+├── calculations/            # Berechnungs-Module
+├── config/                  # Konfiguration
+├── logo/                    # FlexGuide4 Logo
+├── requirements.txt         # Dependencies
+├── env.template             # Template für .env
+└── .env                     # Deine Credentials (lokal)
 ```
 
 ---
 
 ## Nächste Schritte
 
-Nach erfolgreicher Installation:
-
-1. README.md lesen
-2. Demo-Scripts durchprobieren
-3. Eigene Anfragen testen
-4. CONTRIBUTING.md lesen (für Entwickler)
+1. [README.md](README.md) - System-Übersicht
+2. [CONTRIBUTING.md](CONTRIBUTING.md) - Entwickler-Guide
+3. Web-Interface testen mit Beispiel-Fragen
 
 ---
 
-## Updates installieren
+## Updates
 
 ```bash
-# Repository aktualisieren
 git pull origin main
-
-# Dependencies aktualisieren
 pip install -r requirements.txt --upgrade
 ```
 
 ---
 
-## Deinstallation
-
-```bash
-# Virtual Environment deaktivieren
-deactivate
-
-# Projekt-Ordner löschen
-cd ..
-rm -rf logistics-chatbot
-```
-
----
-
-Bei weiteren Fragen: Issue im GitHub Repository erstellen.
+**Support:** Projektteam kontaktieren

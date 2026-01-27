@@ -1,165 +1,165 @@
-# Logistics Chatbot System
+# FlexGuide4 - Intelligenter Logistik-Chatbot
 
-Ein intelligentes Chatbot-System für die Analyse von Logistik-Daten. Das System wandelt natürliche Sprach-Anfragen in OData-Queries um und führt Berechnungen auf Transportauftragsdaten durch.
+> Ein KI-gestütztes Chatbot-System zur natürlichsprachlichen Analyse von Transportauftragsdaten.
 
-Entwickelt als Projektarbeit im Rahmen des Kurses "Business Analytics 2" an der THWS.
-
----
-
-## Überblick
-
-Das System besteht aus vier Hauptkomponenten:
-
-1. **LLM Parser** - Wandelt natürliche Sprache in strukturierte OData-Queries
-2. **OData Client** - Führt API-Anfragen mit OAuth-Authentifizierung durch
-3. **Calculation Engine** - Berechnet Aggregationen und Gruppierungen
-4. **Response Generator** - Erstellt natürlichsprachige Antworten
+**Entwickelt von THWS Student*Innen** im Rahmen des Kurses Business Analytics 2
 
 ---
 
-## Inhaltsverzeichnis
+## Was ist FlexGuide4?
 
-- [Überblick](#überblick)
-- [Systemarchitektur](#systemarchitektur)
-- [Voraussetzungen](#voraussetzungen)
-- [Installation](#installation)
-- [Verwendung](#verwendung)
-- [Projektstruktur](#projektstruktur)
-- [Funktionsweise](#funktionsweise)
-- [Unterstützte Anfragen](#unterstützte-anfragen)
-- [Erweiterungen](#erweiterungen)
-- [Konfiguration](#konfiguration)
-- [Sicherheit](#sicherheit)
-- [Fehlerbehandlung](#fehlerbehandlung)
-- [Lizenz](#lizenz)
-- [Autoren](#autoren)
-- [Kontakt](#kontakt)
+FlexGuide4 wandelt natürliche Fragen in Deutsch in präzise Datenbank-Abfragen um und liefert sofort verständliche Antworten über Logistik-Aufträge.
 
+**Beispiel:**
+```
+User: "Welche Fahraufträge stehen beim Jungheinrich als nächstes an?"
+FlexGuide4: "Verfügbare Aufträge für JUNGHEINRICH (3 Stück):
+1. Auftrag ID 60: MAGAZINO-PARK-01 → LEERGUT-02
+2. Auftrag ID 89: HR-01-02 → MONTAGE-A1-01
+3. Auftrag ID 45: STAPLER-PARK → UEBERGABE-03"
+```
+
+---
+
+## Hauptfunktionen
+
+### Ressourcen-basierter Zugriff
+- **Supervisor-Modus**: Übersicht über alle Ressourcen (AGILOX, JUNGHEINRICH, MAGAZINO, etc.)
+- **Ressourcen-Modus**: Individuelle Ansicht pro Fahrzeug/Stapler mit automatischer Filterung
+
+### Intelligente Abfragen
+- **Nächste Aufträge**: "Was kommt als nächstes?"
+- **Statistiken**: "Wie viele Aufträge heute?" mit Gruppierung nach Status/Typ
+- **Zeitfilter**: Heute, gestern, letzte Woche
+- **Schichtfilter**: Früh-/Spätschicht-spezifische Auswertungen
+- **Detail-Abfragen**: "Zeige mir Auftrag 89" oder "Details zum ersten Auftrag"
+
+### Kontext-Bewusstsein
+- Merkt sich vorherige Fragen
+- Versteht Follow-up-Anfragen wie "Details zum ersten Auftrag"
+- Session-basiertes Memory pro User
 
 ---
 
 ## Systemarchitektur
 
 ```
-User Input (natürliche Sprache)
-         |
-         v
-    LLM Parser (GPT-4)
-         |
-         v
-    Strukturiertes JSON
-    {
-      "odata_params": {...},
-      "calculation": {...}
-    }
-         |
-         v
-    OAuth Handler --> Token Abruf
-         |
-         v
-    OData Client --> API Request
-         |
-         v
-    Rohdaten (JSON)
-         |
-         v
-    Calculation Engine --> Berechnungen
-         |
-         v
-    Response Generator --> Natürliche Antwort
-         |
-         v
-    Output (formatierter Text)
+┌─────────────────┐
+│  Natürliche     │  "Welche Aufträge stehen an?"
+│  Sprache (DE)   │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  LLM Parser     │  GPT-4 → Strukturiertes JSON
+│  (GPT-4)        │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  OData Client   │  OAuth2 → API Request
+│  + OAuth        │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Calculation    │  Aggregationen & Gruppierungen
+│  Engine         │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  Response       │  Formatierte deutsche Antwort
+│  Generator      │
+└─────────────────┘
 ```
 
----
-
-## Voraussetzungen
-
-- Python 3.10 oder höher
-- OpenAI API Key (GPT-4 Zugriff)
-- Zugriff auf die OData API
-  - OAuth Client ID
-  - OAuth Client Secret
-  - API Base URL
+**4 Hauptkomponenten:**
+1. **LLM Parser** - Natürliche Sprache → JSON
+2. **OData Client** - API-Kommunikation mit OAuth2
+3. **Calculation Engine** - Berechnungen & Aggregationen
+4. **Response Generator** - JSON → Natürliche Antwort
 
 ---
 
-## Installation
+## Quick Start
 
-### 1. Repository klonen
+### Voraussetzungen
+- Python 3.10+
+- OpenAI API Key (GPT-4)
+- Zugriff auf THWS Logistik-API
+
+### Installation
 
 ```bash
+# 1. Repository klonen
 git clone <repository-url>
-cd odata_LLM_Chatbot
-```
+cd Flexus_Code
 
-### 2. Dependencies installieren
-
-```bash
+# 2. Dependencies installieren
 pip install -r requirements.txt
+
+# 3. Environment konfigurieren
+cp env.template .env
+# .env mit deinen Credentials befüllen
+
+# 4. Web-Interface starten
+python demo_app.py
 ```
 
-### 3. Umgebungsvariablen konfigurieren
+Öffne Browser: `http://localhost:5000`
 
-Erstelle eine `.env` Datei im Projektverzeichnis:
-
-```bash
-cp .env.template .env
-```
-
-Füge deine Credentials ein:
+### `.env` Konfiguration
 
 ```env
-# OpenAI Configuration
+# OpenAI
 OPENAI_API_KEY=sk-your-key-here
 OPENAI_MODEL=gpt-4o
 
-# OAuth Configuration
-OAUTH_TOKEN_URL=https://your-oauth-endpoint/oauth/token
+# OAuth
+OAUTH_TOKEN_URL=https://api.example.com/oauth/token
 OAUTH_CLIENT_ID=your-client-id
 OAUTH_CLIENT_SECRET=your-client-secret
 
-# OData API Configuration
-ODATA_BASE_URL=https://your-api-endpoint/orders/Orders
+# OData API
+ODATA_BASE_URL=https://api.example.com/orders/Orders
 ```
 
 ---
 
-## Verwendung
+## Verwendungsbeispiele
 
-### Interaktiver Chatbot-Modus
+### Als Supervisor
 
-```bash
-python3 demo_chatbot.py
+```
+"Welche Fahraufträge stehen als nächstes an?"
+→ Übersicht aller Ressourcen mit nächstem Auftrag
+
+"Was steht beim MAGAZINO an?"
+→ Nächste Aufträge nur für MAGAZINO
+
+"Wie viele Aufträge nach Status heute?"
+→ Gruppierte Statistik
 ```
 
-Beispiel-Session:
+### Als Ressource (z.B. JUNGHEINRICH)
+
 ```
-Du: Wie viele Aufträge gibt es heute?
+"Was sind meine nächsten Aufträge?"
+→ Nächste Aufträge für JUNGHEINRICH
 
-Bot: Insgesamt: 42 Fahraufträge
+"Wie viele Aufträge hatte ich heute in der Frühschicht?"
+→ Schicht-spezifische Statistik
+
+"Zeige mir Details zum ersten Auftrag"
+→ Vollständige Auftragsinformationen
 ```
 
-### Demo-Modus mit Beispielen
+### Detail-Abfragen
 
-```bash
-python3 demo_chatbot.py --demo
 ```
-
-Führt vordefinierte Beispiel-Anfragen aus.
-
-### Einzelne Komponenten testen
-
-```bash
-# LLM Parser testen
-python3 demo_parser.py --interactive
-
-# OData Client testen
-python3 demo_odata.py --interactive
-
-# Komplette Pipeline ohne Response Generator
-python3 demo_pipeline.py --interactive
+"Kannst du mir mehr Infos zu Auftrag 60 geben?"
+→ Zeigt: ID, Status, Typ, Quelle, Ziel, Material, Menge, Fälligkeit, etc.
 ```
 
 ---
@@ -167,213 +167,138 @@ python3 demo_pipeline.py --interactive
 ## Projektstruktur
 
 ```
-logistics-chatbot/
+Flexus_Code/
 │
-├── src/
-│   ├── llm_parser.py          # LLM-basierter Query Parser
-│   ├── oauth_handler.py        # OAuth Token Management
-│   ├── odata_client.py         # OData API Client
-│   ├── calculation_engine.py   # Berechnungs-Orchestrierung
-│   └── response_generator.py   # Natural Language Generation
+├── demo_app.py              # Web-Interface (Flask)
 │
-├── calculations/
-│   ├── base.py                 # Basis-Klasse für Berechnungen
-│   ├── count.py                # Count-Berechnungen
-│   ├── sum.py                  # Summen & Aggregationen
-│   └── registry.py             # Calculation Registry
+├── src/                     # Kern-Komponenten
+│   ├── llm_parser.py        # GPT-4 Parser
+│   ├── odata_client.py      # API Client
+│   ├── oauth_handler.py     # Token Management
+│   ├── calculation_engine.py # Berechnungs-Logik
+│   └── response_generator.py # NLG
+│
+├── calculations/            # Berechnungs-Module
+│   ├── count.py            # Zählen & Gruppieren
+│   ├── sum.py              # Summen & Aggregationen
+│   └── registry.py         # Modul-Registry
 │
 ├── config/
-│   └── settings.py             # Konfiguration & Environment Variables
+│   └── settings.py         # Environment Config
 │
-├── demo_chatbot.py             # Haupt-Demo (komplette Pipeline)
-├── demo_parser.py              # LLM Parser Demo
-├── demo_odata.py               # OData Client Demo
-├── demo_pipeline.py            # Pipeline Demo (ohne Response Generator)
+├── logo/
+│   └── logo-flexus.png     # FlexGuide4 Logo
 │
-├── requirements.txt            # Python Dependencies
-├── .env.template               # Template für Environment Variables
-├── .gitignore                  # Git Ignore Rules
-└── README.md                   # Diese Datei
+└── requirements.txt        # Python Dependencies
 ```
 
 ---
 
-## Funktionsweise
+## Features im Detail
 
-### 1. LLM Parser
+### Ressourcen-Management
 
-Eingabe: Natürliche Sprache
-```
-"Wie viele Aufträge gibt es pro Gruppe heute?"
-```
+**9 Ressourcen-Typen:**
+- SUPERVISOR (Zugriff auf alle)
+- AGILOX
+- JUNGHEINRICH
+- MAGAZINO
+- SAFELOG
+- SCHUBMASTSTAPLER_LINKS
+- SCHUBMASTSTAPLER_RECHTS
+- STAPLER_WA
+- STAPLER_WE
 
-Ausgabe: Strukturiertes JSON
-```json
-{
-  "odata_params": {
-    "$filter": "createdAt ge 2025-12-19T00:00:00Z and createdAt lt 2025-12-20T00:00:00Z",
-    "$select": "ID,group",
-    "$top": 100
-  },
-  "calculation": {
-    "type": "count",
-    "grouping_field": "group"
-  }
-}
-```
+### Unterstützte Abfragen
 
-### 2. OData Client
+| Kategorie | Beispiel |
+|-----------|----------|
+| **Nächste Aufträge** | "Was kommt als nächstes?" |
+| **Statistiken** | "Wie viele Aufträge heute?" |
+| **Zeitfilter** | "Aufträge von gestern" |
+| **Schichtfilter** | "Aufträge der Frühschicht" |
+| **Gruppierung** | "Aufträge nach Status" |
+| **Status** | "Wie viele READY Aufträge?" |
+| **Details** | "Zeige Auftrag 89" |
+| **Quelle/Ziel** | "Aufträge von MAGAZINO-PARK-01" |
 
-- Holt OAuth Token (automatische Erneuerung)
-- Baut OData-konforme URL
-- Führt HTTP Request aus
-- Gibt Rohdaten zurück
+### Schicht-Erkennung
 
-### 3. Calculation Engine
-
-Unterstützte Berechnungen:
-- **Count** - Zählen mit/ohne Gruppierung
-- **Sum** - Summen mit/ohne Gruppierung
-- **Aggregation** - avg, min, max
-
-Erweiterbar durch Registry-Pattern.
-
-### 4. Response Generator
-
-Wandelt Berechnungsergebnisse in lesbare deutsche Antworten um:
-
-```
-Insgesamt: 42 Fahraufträge
-
-Aufgeteilt nach Gruppe:
-  Andis_Stapler: 15 (35.7%)
-  Marias_Team: 27 (64.3%)
-
-Meiste Aufträge: Marias_Team mit 27 Aufträgen
-```
+- **Frühschicht**: 06:00 - 14:00 Uhr
+- **Spätschicht**: 14:00 - 22:00 Uhr
+- **Automatisch**: "Heute noch" → aktuelle Schicht
 
 ---
 
-## Unterstützte Anfragen
+## Technologie-Stack
 
-### Einfache Abfragen
-- "Zeige mir Auftrag mit ID 3"
-- "Welche Aufträge wurden heute erstellt?"
-
-### Berechnungen
-- "Wie viele Aufträge gibt es heute?"
-- "Wie viele Aufträge pro Status?"
-- "Wie viele Aufträge nach Gruppe?"
-- "Gesamtmenge aller Aufträge"
-
-### Zeitbasierte Queries
-- "Aufträge von heute"
-- "Aufträge von gestern"
-- "Aufträge dieser Woche"
-
-### Gruppierungen
-
-Gruppierung ist nach jedem Feld möglich:
-- Nach Status: `state`
-- Nach Gruppe: `group`
-- Nach Auftragstyp: `type_ID`
-- Nach Ressource: `assignedResource_ID`
-- etc.
-
----
-
-## Erweiterungen
-
-### Neue Berechnungen hinzufügen
-
-1. Erstelle neue Klasse in `calculations/`:
-
-```python
-from .base import BaseCalculation
-
-class MyCalculation(BaseCalculation):
-    def calculate(self, data, config):
-        # Implementierung
-        return result
-    
-    def validate_config(self, config):
-        return config.get("type") == "my_type"
-```
-
-2. Registriere in `calculations/registry.py`:
-
-```python
-def _register_default_calculations(self):
-    # ...
-    self.register("my_type", MyCalculation())
-```
-
----
-
-## Konfiguration
-
-### OpenAI Model
-
-Standard: `gpt-4o` (empfohlen für Preis/Leistung)
-
-Alternativen:
-- `gpt-4-turbo-preview` - Älteres Modell
-- `gpt-4o-mini` - Günstiger, etwas weniger präzise
-
-In `.env` anpassen:
-```env
-OPENAI_MODEL=gpt-4o
-```
-
-### OData Query Limits
-
-In `config/settings.py`:
-```python
-DEFAULT_TOP_LIMIT = 100
-MAX_TOP_LIMIT = 1000
-```
+- **Python 3.10+**
+- **OpenAI GPT-4** - Natural Language Understanding
+- **Flask** - Web Framework
+- **OData v4** - API Standard
+- **OAuth 2.0** - Authentifizierung
 
 ---
 
 ## Sicherheit
 
-- API-Keys werden über Environment Variables verwaltet
-- `.env` Datei ist in `.gitignore` enthalten
-- OAuth Token wird automatisch erneuert
+- API-Keys nur über Environment Variables
+- `.env` nicht in Git (siehe `.gitignore`)
+- OAuth Token Auto-Refresh
+- Session-basierte User-Isolation
 - Keine Credentials im Code
 
-**WICHTIG:** Niemals `.env` in Git committen!
+**WICHTIG:** Niemals `.env` committen!
 
 ---
 
-## Fehlerbehandlung
+## Testing
 
-Das System fängt Fehler auf allen Ebenen ab:
+### Top 10 Test-Fragen
 
-- **LLM Parser** - Fallback bei Parse-Fehlern
-- **OAuth Handler** - Retry bei Token-Problemen
-- **OData Client** - HTTP Error Handling
-- **Calculation Engine** - Gibt Rohdaten bei Fehler zurück
+**Als Supervisor:**
+1. Welche Fahraufträge stehen als nächstes an?
+2. Was steht beim Jungheinrich an?
+3. Wie viele Aufträge gab es heute?
+4. Wie viele Aufträge nach Status heute?
+5. Kannst du mir mehr Infos zu Auftrag 60 geben?
 
-Bei Problemen: Demo-Scripts mit `--interactive` starten für detaillierte Fehlerausgaben.
+**Als Ressource (z.B. MAGAZINO):**
+6. Was sind meine nächsten Aufträge?
+7. Wie viele Aufträge hatte ich heute in der Frühschicht?
+8. Zeige mir Details zum ersten Auftrag
+9. Wie viele meiner Aufträge sind READY?
+10. Welche Aufträge gehen von MAGAZINO-PARK-01 los?
+
+---
+
+## Contributing
+
+Siehe [CONTRIBUTING.md](CONTRIBUTING.md) für Details zum Entwicklungs-Workflow.
+
+---
+
+## Team
+
+**THWS Business Analytics Studenten:**
+- Maike Knauer
+- Johanna Kießling
+- Dalilah Baumann
+- Fabian Niebelschütz
+
+**Institution:** Technische Hochschule Würzburg-Schweinfurt (THWS)  
+**Kurs:** Business Analytics 2  
+**Semester:** WS 2024/25
 
 ---
 
 ## Lizenz
 
-Projektarbeit THWS - Business Analytics 2
+Projektarbeit THWS - Nur für akademische Zwecke
 
 ---
 
-## Autoren
+## Support
 
-Maike Knauer, Johanna Kießling, Dalilah Baumann, Fabian Niebelschütz
-
-*Studierende des Studiengangs Business Analyitics der Technischen Hochschule Würzburg-Schweinfurt.*
-
-
----
-
-## Kontakt
-
-Bei Fragen oder Problemen: Issue im GitHub Repository erstellen.
+Bei Fragen oder Problemen:
+- Projektteam kontaktieren
