@@ -1,7 +1,7 @@
 """
 Response Generator
 Wandelt Berechnungsergebnisse in natürliche Sprache um
-KORRIGIERT für createdAt Feldname
+ERWEITERT: Mehr Details, bessere Conversation Memory
 """
 
 from typing import Dict, Any, List, Optional
@@ -75,18 +75,47 @@ class ResponseGenerator:
         total = calc_result.get("total", 0)
         groups = calc_result.get("groups")
         grouped_by = calc_result.get("grouped_by")
+        raw_data = full_result.get("raw_data", [])
+
+        # DEBUG - HIER EINFÜGEN:
+        print(f"DEBUG _format_count:")
+        print(f"  total: {total}")
+        print(f"  raw_data length: {len(raw_data)}")
+        print(f"  raw_data first 3: {raw_data[:3]}")
+        print(f"  full_result keys: {full_result.keys()}")
         
-        # Einfaches Count
+        # Einfaches Count - VERBESSERT
         if not groups:
-            response = f"Insgesamt: {total} Fahrauftrag{'e' if total != 1 else ''}"
+            if total == 0:
+                return "Keine Fahraufträge gefunden."
             
-            # Bei detailed: Füge Kontext hinzu
-            if detail_level == "detailed":
-                response += self._add_detailed_context(full_result)
+            elif total == 1:
+                # Zeige Details zum einen Auftrag
+                order = raw_data[0] if raw_data else {}
+                response = f"1 Fahrauftrag gefunden:\n\n"
+                response += self._format_single_order(order)
+                return response
             
-            return response
+            elif total <= 5:
+                # Zeige alle Aufträge mit Details
+                response = f"{total} Fahraufträge gefunden:\n\n"
+                for i, order in enumerate(raw_data[:total], 1):
+                    response += f"[{i}] {self._format_order_summary(order)}\n"
+                return response
+            
+            else:
+                # Viele Aufträge - zeige Übersicht + erste 3
+                response = f"Insgesamt: {total} Fahraufträge\n\n"
+                response += "Erste 3 Aufträge:\n"
+                for i, order in enumerate(raw_data[:3], 1):
+                    response += f"[{i}] {self._format_order_summary(order)}\n"
+                
+                if detail_level == "detailed":
+                    response += self._add_detailed_context(full_result, raw_data)
+                
+                return response
         
-        # Gruppiertes Count
+        # Gruppiertes Count - VERBESSERT
         response = f"Insgesamt: {total} Fahrauftrag{'e' if total != 1 else ''}\n"
         response += f"\nAufgeteilt nach {self._translate_field(grouped_by)}:\n"
         
@@ -97,13 +126,168 @@ class ResponseGenerator:
         # Top-Gruppe hervorheben
         if groups:
             top_group = max(groups.items(), key=lambda x: x[1])
-            response += f"\nMeiste Auftraege: {top_group[0]} mit {top_group[1]} Auftraegen"
+            response += f"\nMeiste Aufträge: {top_group[0]} mit {top_group[1]} Aufträgen"
         
-        # Bei detailed: Füge Kontext hinzu
+        # Bei detailed: Füge erweiterten Kontext hinzu
         if detail_level == "detailed":
-            response += self._add_detailed_context(full_result)
+            response += self._add_detailed_context(full_result, raw_data)
         
         return response
+    
+    def _format_single_order(self, order: Dict[str, Any]) -> str:
+        """Formatiert einen einzelnen Auftrag mit allen Details"""
+        
+        lines = []
+        
+        # ID
+        if order.get("ID"):
+            lines.append(f"ID: {order['ID']}")
+        
+        # Route
+        if order.get("source") and order.get("destination"):
+            lines.append(f"Route: {order['source']} → {order['destination']}")
+        
+        # Status
+        if order.get("state"):
+            lines.append(f"Status: {order['state']}")
+        
+        # Typ
+        if order.get("type_ID"):
+            lines.append(f"Typ: {order['type_ID']}")
+        
+        # Ressource
+        if order.get("assignedResource_ID"):
+            lines.append(f"Ressource: {order['assignedResource_ID']}")
+        
+        # Material + Menge
+        if order.get("material"):
+            material_str = f"Material: {order['material']}"
+            if order.get("quantityAmount"):
+                material_str += f" ({order['quantityAmount']}"
+                if order.get("quantityUnit"):
+                    material_str += f" {order['quantityUnit']}"
+                material_str += ")"
+            lines.append(material_str)
+        
+        # Erstellt am
+        if order.get("createdAt"):
+            created = self._format_datetime(order["createdAt"])
+            lines.append(f"Erstellt: {created}")
+        
+        # Fällig am
+        if order.get("due"):
+            due = self._format_datetime(order["due"])
+            lines.append(f"Fällig: {due}")
+        
+        return "\n".join(lines)
+    
+    def _format_order_summary(self, order: Dict[str, Any]) -> str:
+        """Formatiert eine kompakte Auftrags-Zusammenfassung (eine Zeile)"""
+        
+        parts = []
+        
+        if order.get("ID"):
+            parts.append(f"ID {order['ID']}")
+        
+        if order.get("source") and order.get("destination"):
+            parts.append(f"{order['source']} → {order['destination']}")
+        
+        if order.get("state"):
+            parts.append(f"[{order['state']}]")
+        
+        if order.get("type_ID"):
+            parts.append(f"({order['type_ID']})")
+        
+        return " | ".join(parts) if parts else "Keine Details verfügbar"
+    
+    def _add_detailed_context(self, result: Dict[str, Any], raw_data: List[Dict[str, Any]]) -> str:
+        """Fügt ERWEITERTE detaillierte Kontext-Informationen hinzu"""
+        
+        response = "\n\n--- Detaillierte Analyse ---\n"
+        
+        # 1. Auftragstypen
+        type_dist = {}
+        for order in raw_data:
+            order_type = order.get("type_ID", "Unbekannt")
+            type_dist[order_type] = type_dist.get(order_type, 0) + 1
+        
+        if type_dist:
+            response += "\nAuftragstypen:\n"
+            for order_type, count in sorted(type_dist.items(), key=lambda x: x[1], reverse=True):
+                response += f"  {order_type}: {count}\n"
+        
+        # 2. Offene Aufträge (nicht DONE/COMPLETED/INACTIVE)
+        open_states = ["READY", "RUNNING", "ASSIGNED", "RESERVED", "PENDING"]
+        open_orders = [o for o in raw_data if o.get("state") in open_states]
+        
+        if open_orders:
+            response += f"\nOffene Aufträge ({len(open_orders)}):\n"
+            for order in open_orders[:5]:  # Max 5 zeigen
+                response += f"  • ID {order.get('ID')}: {order.get('source', '?')} → {order.get('destination', '?')} [{order.get('state')}]\n"
+            
+            if len(open_orders) > 5:
+                response += f"  ... und {len(open_orders) - 5} weitere offene\n"
+        
+        # 3. Überfällige Aufträge (due in der Vergangenheit, nicht DONE)
+        now = datetime.now()
+        overdue_orders = []
+        
+        for order in raw_data:
+            if order.get("due") and order.get("state") not in ["DONE", "COMPLETED"]:
+                try:
+                    due_dt = datetime.fromisoformat(order["due"].replace('Z', '+00:00'))
+                    if due_dt < now:
+                        overdue_orders.append(order)
+                except:
+                    pass
+        
+        if overdue_orders:
+            response += f"\n⚠️ Überfällige Aufträge ({len(overdue_orders)}):\n"
+            for order in overdue_orders[:5]:
+                due_str = self._format_datetime(order.get("due", ""))
+                response += f"  • ID {order.get('ID')}: {order.get('source', '?')} → {order.get('destination', '?')} (fällig: {due_str})\n"
+            
+            if len(overdue_orders) > 5:
+                response += f"  ... und {len(overdue_orders) - 5} weitere überfällig\n"
+        
+        # 4. Top Routen
+        routes = {}
+        for order in raw_data:
+            if order.get("source") and order.get("destination"):
+                route = f"{order['source']} → {order['destination']}"
+                routes[route] = routes.get(route, 0) + 1
+        
+        if routes:
+            top_routes = sorted(routes.items(), key=lambda x: x[1], reverse=True)[:3]
+            response += "\nHäufigste Routen:\n"
+            for route, count in top_routes:
+                response += f"  {route}: {count}x\n"
+        
+        # 5. Ressourcen-Verteilung
+        resource_dist = {}
+        for order in raw_data:
+            resource = order.get("assignedResource_ID", "Nicht zugewiesen")
+            if resource:
+                resource_dist[resource] = resource_dist.get(resource, 0) + 1
+        
+        if resource_dist and len(resource_dist) > 1:  # Nur wenn mehrere Ressourcen
+            response += "\nRessourcen-Verteilung:\n"
+            for resource, count in sorted(resource_dist.items(), key=lambda x: x[1], reverse=True)[:5]:
+                response += f"  {resource}: {count}\n"
+        
+        return response
+    
+    def _format_datetime(self, dt_string: str) -> str:
+        """Formatiert Datetime-String zu lesbarem Format"""
+        
+        if not dt_string:
+            return "N/A"
+        
+        try:
+            dt = datetime.fromisoformat(dt_string.replace('Z', '+00:00'))
+            return dt.strftime("%d.%m.%Y %H:%M")
+        except:
+            return dt_string
     
     def _format_count_percentage(self, calc_result: Dict[str, Any], context: Optional[Dict[str, Any]]) -> str:
         """Formatiert Count mit Prozent"""
@@ -186,65 +370,24 @@ class ResponseGenerator:
         raw_data = result.get("raw_data", [])
         
         if count == 0:
-            return "Keine Auftraege gefunden."
+            return "Keine Aufträge gefunden."
         
         if count == 1:
             # Einzelner Datensatz - zeige Details
-            record = raw_data[0]
+            order = raw_data[0]
             response = "Auftrag gefunden:\n\n"
-            
-            # Wichtige Felder zuerst
-            important_fields = ["ID", "state", "type_ID", "source", "destination", 
-                              "material", "quantityAmount", "quantityUnit", "createdAt"]
-            
-            for field in important_fields:
-                if field in record and record[field] is not None:
-                    label = self._translate_field(field)
-                    value = record[field]
-                    
-                    # Datum formatieren (createdAt!)
-                    if field == "createdAt" and isinstance(value, str):
-                        try:
-                            dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
-                            value = dt.strftime("%d.%m.%Y %H:%M")
-                        except:
-                            pass
-                    
-                    response += f"{label}: {value}\n"
-            
+            response += self._format_single_order(order)
             return response
         
         # Mehrere Datensätze - zeige Übersicht
-        response = f"{count} Auftraege gefunden:\n\n"
+        response = f"{count} Aufträge gefunden:\n\n"
         
         # Zeige erste 5
-        for i, record in enumerate(raw_data[:5], 1):
-            response += f"[{i}] ID: {record.get('ID', 'N/A')}"
-            
-            if record.get('state'):
-                response += f" | Status: {record.get('state')}"
-            
-            if record.get('type_ID'):
-                response += f" | Typ: {record.get('type_ID')}"
-            
-            response += "\n"
+        for i, order in enumerate(raw_data[:5], 1):
+            response += f"[{i}] {self._format_order_summary(order)}\n"
         
         if count > 5:
             response += f"\n... und {count - 5} weitere"
-        
-        return response
-    
-    def _add_detailed_context(self, result: Dict[str, Any]) -> str:
-        """Fügt detaillierte Kontext-Informationen hinzu"""
-        
-        response = "\n\n--- Detaillierte Informationen ---\n"
-        
-        # Status-Verteilung
-        status_dist = result.get("status_distribution", {})
-        if status_dist:
-            response += "\nStatus-Uebersicht:\n"
-            for status, count in status_dist.items():
-                response += f"  {status}: {count}\n"
         
         return response
     
@@ -274,9 +417,9 @@ class ResponseGenerator:
             "quantityAmount": "Menge",
             "quantityUnit": "Einheit",
             "createdAt": "Erstellt am",
-            "modifiedAt": "Geaendert am",
-            "due": "Faellig am",
-            "loadCarrierType_name": "Ladungstraeger",
+            "modifiedAt": "Geändert am",
+            "due": "Fällig am",
+            "loadCarrierType_name": "Ladungsträger",
             "categoryReasonCode": "Kategorie",
             "origin": "Ursprung",
             "note": "Notiz"

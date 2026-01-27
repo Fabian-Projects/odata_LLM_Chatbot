@@ -1,7 +1,7 @@
 """
 LLM-basierter Query Parser
 Konvertiert natürliche Sprache in strukturierte OData-Queries + Berechnungslogik
-KORRIGIERT: createdAt Format, Millisekunden, letzte Woche Support
+ERWEITERT: Intent "next_orders" + Ressourcen-Context
 """
 
 import json
@@ -26,19 +26,36 @@ class LLMQueryParser:
         self.model = model
         self.conversation_history: List[Dict[str, Any]] = []
         
-    def parse_query(self, user_input: str) -> Dict[str, Any]:
+        # NEU: Ressourcen-Positions-Mapping
+        self.resource_positions = {
+            "AGILOX": "AGILOX-PARK-02",
+            "JUNGHEINRICH": "JUNGHEINRICH-PARK",
+            "MAGAZINO": "MAGAZINO-PARK-01",
+            "SAFELOG": "SAFELOG-PARK",
+            "SCHUBMASTSTAPLER_LINKS": "SCHUBMAST-PARK-LINKS",
+            "SCHUBMASTSTAPLER_RECHTS": "SCHUBMAST-PARK-RECHTS",
+            "STAPLER_WA": "STAPLER-PARK-WA",
+            "STAPLER_WE": "STAPLER-PARK-WE",
+        }
+        
+    def parse_query(self, user_input: str, resource_id: str = "SUPERVISOR") -> Dict[str, Any]:
         """
         Hauptmethode: Parst User-Input zu strukturiertem JSON
         
         Args:
             user_input: Natürliche Sprache vom User
-            
+            resource_id: Aktuelle Ressource des Users (NEU)
+        
         Returns:
             Dictionary mit odata_params, calculation, etc.
         """
         
+        # Kontext-Anreicherung für Detailabfragen
+        last_context = self._get_last_context()
+        enriched_input = self._enrich_with_context(user_input, last_context)
+
         # System Prompt mit Schema-Info und Beispielen
-        system_prompt = self._build_system_prompt()
+        system_prompt = self._build_system_prompt(resource_id, last_context)
         
         # Conversation History für Context
         messages = [
@@ -51,7 +68,7 @@ class LLMQueryParser:
             messages.append({"role": "assistant", "content": json.dumps(hist["parsed_output"], ensure_ascii=False)})
         
         # Aktuelle Frage
-        messages.append({"role": "user", "content": user_input})
+        messages.append({"role": "user", "content": enriched_input})
         
         # GPT API Call
         try:
@@ -65,12 +82,13 @@ class LLMQueryParser:
             parsed_output = json.loads(response.choices[0].message.content)
             
             # Validierung
-            validated_output = self._validate_and_enhance(parsed_output)
+            validated_output = self._validate_and_enhance(parsed_output, resource_id)
             
             # History speichern
             self.conversation_history.append({
                 "user_input": user_input,
                 "parsed_output": validated_output,
+                "resource_id": resource_id,
                 "timestamp": datetime.now().isoformat()
             })
             
@@ -80,7 +98,68 @@ class LLMQueryParser:
             print(f"LLM Parser Error: {e}")
             return self._get_fallback_response(user_input, str(e))
     
-    def _build_system_prompt(self) -> str:
+    def _get_last_context(self) -> Optional[Dict[str, Any]]:
+        """Holt den letzten Kontext aus der Conversation History"""
+        if self.conversation_history:
+            return self.conversation_history[-1]
+        return None
+    
+    def _enrich_with_context(self, user_input: str, context: Optional[Dict[str, Any]]) -> str:
+        """
+        Reichert User-Input mit Kontext-Informationen an
+        Ermöglicht Detailabfragen zu vorherigen Aufträgen
+        """
+        if not context:
+            return user_input
+        
+        enriched = user_input
+        parsed = context.get("parsed_output", {})
+        
+        # Check: War letzte Anfrage "next_orders"?
+        if parsed.get("intent") == "next_orders":
+            # Extrahiere Auftragsdaten falls vorhanden
+            # Diese Daten kommen aus der demo_app.py conversation_contexts
+            enriched += "\n\n[KONTEXT aus letzter Anfrage]"
+            enriched += "\nLetzte Anfrage war nach nächsten Fahraufträgen."
+        
+        # Check: Fragt User nach Details zu einem Auftrag?
+        import re
+        
+        # Pattern 1: "Auftrag 60", "Auftrag ID 60", "Order 60"
+        order_id_match = re.search(r'auftrag(?:\s+id)?\s+(\d+)', user_input.lower())
+        
+        # Pattern 2: "erster Auftrag", "zweiter Auftrag", "dritter Auftrag"
+        position_match = re.search(r'(erste[rn]?|zweite[rn]?|dritte[rn]?)\s+auftrag', user_input.lower())
+        
+        if order_id_match:
+            order_id = order_id_match.group(1)
+            enriched += f"\n\n[HINWEIS] User fragt nach Details zu Auftrag ID: {order_id}"
+            enriched += f"\nBitte erstelle einen Filter: ID eq '{order_id}'"
+            enriched += "\nWähle ALLE relevanten Felder für $select: ID,createdAt,modifiedAt,due,state,type_ID,source,destination,material,quantityAmount,quantityUnit,loadCarrierType_name,assignedResource_ID,group"
+        
+        elif position_match:
+            position_text = position_match.group(1)
+            position_mapping = {
+                'erste': 1, 'ersten': 1, 'erster': 1,
+                'zweite': 2, 'zweiten': 2, 'zweiter': 2,
+                'dritte': 3, 'dritten': 3, 'dritter': 3
+            }
+            position_num = position_mapping.get(position_text, 1)
+            
+            enriched += f"\n\n[HINWEIS] User fragt nach dem {position_num}. Auftrag aus der letzten Antwort."
+            enriched += "\nDies bezieht sich auf die vorherige 'next_orders' Anfrage."
+            enriched += f"\nBitte erstelle eine Standard-Query für Auftragsdetails (keine next_orders)."
+        
+        # Check: Fragt User nach "mehr Infos", "Details", "genauere Informationen"?
+        detail_keywords = ['mehr infos', 'details', 'genauere', 'ausführlich', 'vollständig']
+        if any(keyword in user_input.lower() for keyword in detail_keywords):
+            enriched += "\n\n[HINWEIS] User möchte detaillierte Informationen."
+            enriched += "\nSetze detail_level auf 'detailed' und wähle ALLE relevanten Felder."
+        
+        return enriched
+
+
+    def _build_system_prompt(self, resource_id: str = "SUPERVISOR", last_context: Optional[Dict[str, Any]] = None) -> str:
         """
         Erstellt den System-Prompt mit Schema-Info und Beispielen
         """
@@ -88,9 +167,37 @@ class LLMQueryParser:
         heute = datetime.now().strftime("%Y-%m-%d")
         aktuelle_uhrzeit = datetime.now().strftime("%H:%M")
         date_context = self._get_date_context()
+        
+        # Ressourcen-Info
+        resource_info = f"\n**Aktuelle Ressource:** {resource_id}"
+        if resource_id != "SUPERVISOR":
+            default_pos = self.resource_positions.get(resource_id, "Unbekannt")
+            resource_info += f"\n**Standard-Position:** {default_pos}"
+        
+        # Liste aller verfügbaren Ressourcen
+        resources_list = "\n**Verfügbare Ressourcen:**\n"
+        resources_list += "- AGILOX\n- JUNGHEINRICH\n- MAGAZINO\n- SAFELOG\n"
+        resources_list += "- SCHUBMASTSTAPLER_LINKS\n- SCHUBMASTSTAPLER_RECHTS\n"
+        resources_list += "- STAPLER_WA\n- STAPLER_WE\n"
+        resources_list += "\nWenn User eine dieser Ressourcen nennt (z.B. 'beim Jungheinrich', 'bei MAGAZINO'), "
+        resources_list += "setze das 'resource' Feld in next_orders_params."
 
-        prompt = f"""Du bist ein Experten-System für Logistik-Datenbanken. 
+        # Kontext-Info für Follow-up-Fragen
+        context_info = ""
+        if last_context and last_context.get("parsed_output"):
+            last_parsed = last_context["parsed_output"]
+            if last_parsed.get("intent") == "next_orders":
+                context_info = "\n\n**WICHTIG - Follow-up zu letzter Anfrage:**"
+                context_info += "\nDie letzte Anfrage war nach 'nächsten Aufträgen'."
+                context_info += "\nWenn User jetzt nach 'erstem Auftrag', 'zweitem Auftrag' oder einer spezifischen Auftrags-ID fragt,"
+                context_info += "\ndann erstelle eine NORMALE Query (intent: 'query') mit einem Filter auf die ID."
+                context_info += "\nBeispiel: 'Details zum ersten Auftrag' → nutze die Order-ID aus der letzten Antwort"
+
+        prompt = f"""Du bist ein Experten-System für Logistik-Datenbanken.
+        {context_info}
+        {resources_list} 
 Deine Aufgabe: Wandle natürliche Sprach-Anfragen in strukturierte JSON-Queries für ein OData-API um.
+{resource_info}
 
 **KRITISCH - Datumsformat:**
 API nutzt: "2026-01-19T08:43:23.787Z" (MIT Millisekunden .000Z)
@@ -109,6 +216,17 @@ Erkenne Schicht-Anfragen:
 - "in der Frühschicht" → shift_filter: "früh"
 - "in der Spätschicht" → shift_filter: "spät"
 - "heute noch" / "aktuelle Schicht" → shift_filter: "current"
+
+**NEU - NÄCHSTE AUFTRÄGE:**
+Erkenne Anfragen nach nächsten Fahraufträgen:
+- "Zeig mir meine nächsten Aufträge"
+- "Was kommt als nächstes?"
+- "Nächste Fahraufträge"
+- "Welche Aufträge stehen an?"
+
+Wenn solche Anfragen erkannt werden:
+- Setze intent: "next_orders"
+- Füge position hinzu (Standard-Position der Ressource oder explizit genannt)
 
 **WICHTIG - Beantwortbarkeit:**
 - Prüfe ob die Frage mit den verfügbaren Datenbank-Feldern beantwortbar ist
@@ -137,7 +255,7 @@ Erkenne Schicht-Anfragen:
 {{
   "isAnswerable": true oder false,
   "reason": "Erklärung wenn nicht beantwortbar (nur bei false)",
-  "intent": "query" oder "calculation",
+  "intent": "query" | "calculation" | "next_orders",
   "odata_params": {{
     "$filter": "OData-Filter-String (optional)",
     "$select": "Komma-getrennte Felder (optional)",
@@ -151,6 +269,10 @@ Erkenne Schicht-Anfragen:
     "shift_filter": "früh" | "spät" | "current" | null,
     "detail_level": "basic" | "detailed",
     "time_field": "createdAt" | "modifiedAt" | "due" (optional)
+  }},
+  "next_orders_params": {{
+    "resource": "Spezifische Ressource (optional, nur wenn User eine bestimmte Ressource nennt)",
+    "position": "Position der Ressource (optional, sonst Standard-Position)"
   }},
   "response_context": {{
     "user_question": "Original-Frage",
@@ -172,6 +294,36 @@ Erkenne Schicht-Anfragen:
 
 **Beispiele:**
 
+User: "Zeig mir meine nächsten Aufträge"
+{{
+  "isAnswerable": true,
+  "intent": "next_orders",
+  "odata_params": {{}},
+  "calculation": null,
+  "next_orders_params": {{
+    "position": null
+  }},
+  "response_context": {{
+    "user_question": "Zeig mir meine nächsten Aufträge",
+    "friendly_description": "Nächste Fahraufträge für diese Ressource"
+  }}
+}}
+
+User: "Was kommt als nächstes bei HR-01-02?"
+{{
+  "isAnswerable": true,
+  "intent": "next_orders",
+  "odata_params": {{}},
+  "calculation": null,
+  "next_orders_params": {{
+    "position": "HR-01-02"
+  }},
+  "response_context": {{
+    "user_question": "Was kommt als nächstes bei HR-01-02?",
+    "friendly_description": "Nächste Fahraufträge ab Position HR-01-02"
+  }}
+}}
+
 User: "Wie viele Aufträge gab es heute?"
 {{
   "isAnswerable": true,
@@ -185,6 +337,7 @@ User: "Wie viele Aufträge gab es heute?"
     "grouping_field": null,
     "detail_level": "basic"
   }},
+  "next_orders_params": null,
   "response_context": {{
     "user_question": "Wie viele Aufträge gab es heute?",
     "friendly_description": "Anzahl der heute erstellten Aufträge"
@@ -200,6 +353,7 @@ User: "Zeige mir Auftrag 89"
     "$select": "ID,createdAt,state,type_ID,source,destination,material,quantityAmount"
   }},
   "calculation": null,
+  "next_orders_params": null,
   "response_context": {{
     "user_question": "Zeige mir Auftrag 89",
     "friendly_description": "Details zu Auftrag 89"
@@ -219,6 +373,7 @@ User: "Wie viele Aufträge nach Status heute?"
     "grouping_field": "state",
     "detail_level": "basic"
   }},
+  "next_orders_params": null,
   "response_context": {{
     "user_question": "Wie viele Aufträge nach Status heute?",
     "friendly_description": "Aufträge gruppiert nach Status"
@@ -238,6 +393,7 @@ User: "Kannst du mir genauere Informationen geben?"
     "grouping_field": "state",
     "detail_level": "detailed"
   }},
+  "next_orders_params": null,
   "response_context": {{
     "user_question": "Kannst du mir genauere Informationen geben?",
     "friendly_description": "Detaillierte Auftrags-Statistiken"
@@ -258,6 +414,7 @@ User: "Wie viele Aufträge gab es letzte Woche?"
     "shift_filter": null,
     "detail_level": "basic"
   }},
+  "next_orders_params": null,
   "response_context": {{
     "user_question": "Wie viele Aufträge gab es letzte Woche?",
     "friendly_description": "Aufträge der letzten Woche"
@@ -277,6 +434,7 @@ User: "Wie viele Aufträge gab es heute in der Frühschicht?"
     "shift_filter": "früh",
     "detail_level": "basic"
   }},
+  "next_orders_params": null,
   "response_context": {{
     "user_question": "Wie viele Aufträge gab es heute in der Frühschicht?",
     "friendly_description": "Aufträge der Frühschicht"
@@ -296,9 +454,157 @@ User: "Wie viele Aufträge haben wir heute noch?"
     "shift_filter": "current",
     "detail_level": "basic"
   }},
+  "next_orders_params": null,
   "response_context": {{
     "user_question": "Wie viele Aufträge haben wir heute noch?",
     "friendly_description": "Offene Aufträge der aktuellen Schicht"
+  }}
+}}
+
+User: "Kannst du mir mehr Infos zu Auftrag 60 geben?"
+{{
+  "isAnswerable": true,
+  "intent": "query",
+  "odata_params": {{
+    "$filter": "ID eq '60'",
+    "$select": "ID,createdAt,modifiedAt,due,state,type_ID,source,destination,material,quantityAmount,quantityUnit,loadCarrierType_name,assignedResource_ID,group"
+  }},
+  "calculation": null,
+  "next_orders_params": null,
+  "response_context": {{
+    "user_question": "Kannst du mir mehr Infos zu Auftrag 60 geben?",
+    "friendly_description": "Detaillierte Informationen zu Auftrag ID 60"
+  }}
+}}
+
+User: "Kannst du mir mehr Infos zum ersten Auftrag geben?"
+{{
+  "isAnswerable": true,
+  "intent": "query",
+  "odata_params": {{
+    "$filter": "ID eq 'ID_AUS_KONTEXT'",
+    "$select": "ID,createdAt,modifiedAt,due,state,type_ID,source,destination,material,quantityAmount,quantityUnit,loadCarrierType_name,assignedResource_ID,group"
+  }},
+  "calculation": null,
+  "next_orders_params": null,
+  "response_context": {{
+    "user_question": "Kannst du mir mehr Infos zum ersten Auftrag geben?",
+    "friendly_description": "Details zum ersten Auftrag aus der vorherigen Liste"
+  }}
+}}
+
+User: "Welche Fahraufträge stehen beim Jungheinrich als nächstes an?"
+{{
+  "isAnswerable": true,
+  "intent": "next_orders",
+  "odata_params": {{}},
+  "calculation": null,
+  "next_orders_params": {{
+    "resource": "JUNGHEINRICH",
+    "position": null
+  }},
+  "response_context": {{
+    "user_question": "Welche Fahraufträge stehen beim Jungheinrich als nächstes an?",
+    "friendly_description": "Nächste Fahraufträge für JUNGHEINRICH"
+  }}
+}}
+
+User: "Welche Fahraufträge stehen als nächstes an?" (Als Supervisor)
+{{
+  "isAnswerable": true,
+  "intent": "next_orders",
+  "odata_params": {{}},
+  "calculation": null,
+  "next_orders_params": {{
+    "resource": null,
+    "position": null
+  }},
+  "response_context": {{
+    "user_question": "Welche Fahraufträge stehen als nächstes an?",
+    "friendly_description": "Nächste Fahraufträge für alle Ressourcen (Supervisor-Ansicht)"
+  }}
+}}
+
+User: "Was steht beim MAGAZINO an?"
+{{
+  "isAnswerable": true,
+  "intent": "next_orders",
+  "odata_params": {{}},
+  "calculation": null,
+  "next_orders_params": {{
+    "resource": "MAGAZINO",
+    "position": null
+  }},
+  "response_context": {{
+    "user_question": "Was steht beim MAGAZINO an?",
+    "friendly_description": "Nächste Fahraufträge für MAGAZINO"
+  }}
+}}
+
+User: "Zeig mir was beim Jungheinrich kommt"
+{{
+  "isAnswerable": true,
+  "intent": "next_orders",
+  "odata_params": {{}},
+  "calculation": null,
+  "next_orders_params": {{
+    "resource": "JUNGHEINRICH",
+    "position": null
+  }},
+  "response_context": {{
+    "user_question": "Zeig mir was beim Jungheinrich kommt",
+    "friendly_description": "Nächste Fahraufträge für JUNGHEINRICH"
+  }}
+}}
+
+User: "Welche Aufträge gehen von MAGAZINO-PARK-01 los?"
+{{
+  "isAnswerable": true,
+  "intent": "query",
+  "odata_params": {{
+    "$filter": "source eq 'MAGAZINO-PARK-01'",
+    "$select": "ID,createdAt,state,source,destination,type_ID,assignedResource_ID"
+  }},
+  "calculation": null,
+  "next_orders_params": null,
+  "response_context": {{
+    "user_question": "Welche Aufträge gehen von MAGAZINO-PARK-01 los?",
+    "friendly_description": "Aufträge mit Start-Position MAGAZINO-PARK-01"
+  }}
+}}
+
+User: "Zeige mir Aufträge zum Ziel LEERGUT-02"
+{{
+  "isAnswerable": true,
+  "intent": "query",
+  "odata_params": {{
+    "$filter": "destination eq 'LEERGUT-02'",
+    "$select": "ID,createdAt,state,source,destination,type_ID,assignedResource_ID"
+  }},
+  "calculation": null,
+  "next_orders_params": null,
+  "response_context": {{
+    "user_question": "Zeige mir Aufträge zum Ziel LEERGUT-02",
+    "friendly_description": "Aufträge mit Ziel LEERGUT-02"
+  }}
+}}
+
+User: "Wie viele Aufträge von MONTAGE nach HR?"
+{{
+  "isAnswerable": true,
+  "intent": "calculation",
+  "odata_params": {{
+    "$filter": "contains(source, 'MONTAGE') and contains(destination, 'HR')",
+    "$select": "ID,createdAt,state,source,destination"
+  }},
+  "calculation": {{
+    "type": "count",
+    "detail_level": "basic"
+  }},
+  "next_orders_params": null,
+  "response_context": {{
+    "user_question": "Wie viele Aufträge von MONTAGE nach HR?",
+    "friendly_description": "Anzahl Aufträge von MONTAGE nach HR"
   }}
 }}
 
@@ -306,14 +612,15 @@ User: "Wie viele Aufträge haben wir heute noch?"
 - Antworte NUR mit gültigem JSON, keine Erklärungen drumherum
 - Bei Datumsangaben: "heute" = {heute}, "gestern" = Tag davor, "letzte Woche" = 7 Tage zurück
 - IMMER Millisekunden im Datumsformat: .000Z oder .999Z
-- $select: IMMER "ID,createdAt,state" inkludieren
+- $select: IMMER mindestens "ID,createdAt,state,source,destination,type_ID,assignedResource_ID" inkludieren
 - Nutze "state" für Gruppierungen (nicht "group", da oft null)
 - Bei Nachfragen wie "genauere Informationen": setze detail_level auf "detailed"
+- Bei "nächste Aufträge"-Anfragen: intent = "next_orders"
 """
         
         return prompt
     
-    def _validate_and_enhance(self, parsed: Dict[str, Any]) -> Dict[str, Any]:
+    def _validate_and_enhance(self, parsed: Dict[str, Any], resource_id: str = "SUPERVISOR") -> Dict[str, Any]:
         """Validiert und ergänzt das geparste JSON"""
         
         # isAnswerable Check
@@ -326,18 +633,38 @@ User: "Wie viele Aufträge haben wir heute noch?"
                 parsed["reason"] = "Die Frage kann mit den verfügbaren Daten nicht beantwortet werden."
             return parsed
         
-        # Rest wie vorher...
+        # Intent Check
         if "intent" not in parsed:
             parsed["intent"] = "query"
         
+        # Für "next_orders" Intent
+        # NEU: Für "next_orders" Intent
+        if parsed["intent"] == "next_orders":
+            if "next_orders_params" not in parsed:
+                parsed["next_orders_params"] = {}
+            
+            # Prüfe ob spezifische Ressource genannt wurde
+            params = parsed["next_orders_params"]
+            
+            # Wenn keine Position angegeben, nutze Standard-Position
+            if not params.get("position"):
+                # Wenn spezifische Ressource im Intent erwähnt
+                target_resource = params.get("resource") or resource_id
+                
+                if target_resource != "SUPERVISOR":
+                    params["position"] = self.resource_positions.get(target_resource)
+                else:
+                    params["position"] = None
+        
+        # Für normale Queries
         if "odata_params" not in parsed:
             parsed["odata_params"] = {}
         
         # FIX Datumsfilter mit korrektem Format
-        if "$filter" in parsed["odata_params"]:
+        if "$filter" in parsed.get("odata_params", {}):
             parsed["odata_params"]["$filter"] = self._fix_date_format(parsed["odata_params"]["$filter"])
         
-        if "$top" not in parsed["odata_params"]:
+        if "$top" not in parsed.get("odata_params", {}):
             parsed["odata_params"]["$top"] = 100
         
         if "calculation" not in parsed or parsed["calculation"] == {}:
@@ -395,7 +722,6 @@ User: "Wie viele Aufträge haben wir heute noch?"
             filter_string = filter_string.replace(placeholder, value)
         
         # Füge Millisekunden hinzu wenn sie fehlen
-        # Pattern: "2026-01-19T00:00:00Z" → "2026-01-19T00:00:00.000Z"
         import re
         
         # Finde alle Datums-Patterns ohne Millisekunden
@@ -407,7 +733,6 @@ User: "Wie viele Aufträge haben wir heute noch?"
         filter_string = re.sub(pattern, add_milliseconds, filter_string)
         
         # Stelle sicher dass End-Zeiten .999Z haben
-        # Pattern: "23:59:59.000Z" → "23:59:59.999Z"
         filter_string = filter_string.replace('23:59:59.000Z', '23:59:59.999Z')
         
         return filter_string
@@ -461,7 +786,7 @@ Format-Beispiel: {today.strftime('%Y-%m-%d')}T00:00:00.000Z
 """
 
 
-# ===== HELPER FUNCTIONS =====
+# ===== HELPER FUNCTIONS (alte Funktionen bleiben erhalten) =====
 
 def build_time_filter(timeframe: str) -> str:
     """

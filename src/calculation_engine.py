@@ -107,6 +107,7 @@ class CalculationEngine:
             
             result = {
                 "calculation_result": calculation_result,
+                "raw_data": raw_data,
                 "raw_data_count": len(raw_data),
                 "has_calculation": True,
                 "calculation_type": calculation_config.get("type"),
