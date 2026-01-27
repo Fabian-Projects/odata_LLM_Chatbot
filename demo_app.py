@@ -215,7 +215,7 @@ app.secret_key = 'flexguide-demo-secret-key-2025'
 
 @app.route('/logo')
 def serve_logo():
-    logo_path = '/Users/fabi/Documents/BBA/7_Semester/Projekt_Business_Analytics_2/Flexus_Projektarbeit_Klenk/Flexus_Code/logo'
+    logo_path = os.path.join(os.path.dirname(__file__), 'logo')
     return send_from_directory(logo_path, 'logo-flexus.png')
 
 @app.get("/")
