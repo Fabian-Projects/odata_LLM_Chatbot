@@ -104,13 +104,11 @@ class ResponseGenerator:
                 return response
             
             else:
-                # Viele Aufträge - zeige Übersicht + erste 3
-                response = f"Insgesamt: {total} Fahraufträge\n\n"
-                response += "Erste 3 Aufträge:\n"
-                for i, order in enumerate(raw_data[:3], 1):
-                    response += f"[{i}] {self._format_order_summary(order)}\n"
+                # Viele Aufträge - zeige nur Gesamtzahl
+                response = f"Insgesamt: {total} Fahraufträge"
                 
                 if detail_level == "detailed":
+                    response += "\n\n"
                     response += self._add_detailed_context(full_result, raw_data)
                 
                 return response

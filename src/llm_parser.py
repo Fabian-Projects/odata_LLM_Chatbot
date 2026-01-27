@@ -259,7 +259,7 @@ Wenn solche Anfragen erkannt werden:
   "odata_params": {{
     "$filter": "OData-Filter-String (optional)",
     "$select": "Komma-getrennte Felder (optional)",
-    "$top": Anzahl (optional, default 100),
+    "$top": Anzahl (optional, default: kein Limit für Zählungen),
     "$orderby": "Feld asc/desc (optional)",
     "$count": true/false (optional)
   }},
@@ -359,6 +359,14 @@ User: "Zeige mir Auftrag 89"
     "friendly_description": "Details zu Auftrag 89"
   }}
 }}
+
+User: "Wie viele Aufträge gibt es heute?"
+{{
+  "odata_params": {{
+    "$filter": "createdAt ge {heute}T00:00:00.000Z...",
+    "$select": "ID,createdAt",
+    "$count": true
+  }},
 
 User: "Wie viele Aufträge nach Status heute?"
 {{
@@ -665,7 +673,7 @@ User: "Wie viele Aufträge von MONTAGE nach HR?"
             parsed["odata_params"]["$filter"] = self._fix_date_format(parsed["odata_params"]["$filter"])
         
         if "$top" not in parsed.get("odata_params", {}):
-            parsed["odata_params"]["$top"] = 100
+            parsed["odata_params"]["$top"] = 1000
         
         if "calculation" not in parsed or parsed["calculation"] == {}:
             parsed["calculation"] = None
